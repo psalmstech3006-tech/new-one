@@ -2,17 +2,19 @@ import * as THREE from 'three';
 
 // Art generated with Higgsfield (z_image). Local copies in /assets are tried first,
 // then the Higgsfield CDN, then a procedural canvas fallback so the game always runs.
+// Opened straight from disk (file://), relative asset paths can't load, so skip them.
+const local = (path) => (location.protocol === 'file:' ? [] : [path]);
 const HF = 'https://d8j0ntlcm91z4.cloudfront.net/user_3JneAcQeA5p58UuiLtedWKxicZd/';
 export const ART = {
-  keyArt: ['assets/key-art.png', HF + 'hf_20260928_231525_7c6d8467-d083-485c-80c8-4a1066c859fd_min.webp'],
-  loadHighway: ['assets/load-highway.png', HF + 'hf_20260928_231449_a8fd9dbb-133f-4ecf-ae4d-05869c2dabb8_min.webp'],
-  loadSkyline: ['assets/load-skyline.png', HF + 'hf_20260928_231448_da0b2c9f-cfac-45e4-a53a-8eefc785673a_min.webp'],
+  keyArt: [...local('assets/key-art.png'), HF + 'hf_20260928_231525_7c6d8467-d083-485c-80c8-4a1066c859fd_min.webp'],
+  loadHighway: [...local('assets/load-highway.png'), HF + 'hf_20260928_231449_a8fd9dbb-133f-4ecf-ae4d-05869c2dabb8_min.webp'],
+  loadSkyline: [...local('assets/load-skyline.png'), HF + 'hf_20260928_231448_da0b2c9f-cfac-45e4-a53a-8eefc785673a_min.webp'],
 };
 const TEX = {
-  brick: ['assets/tex-brick.png', HF + 'hf_20260928_231449_e392cd57-e156-4120-bec4-ed91837fe0a8_min.webp'],
-  asphalt: ['assets/tex-asphalt.png', HF + 'hf_20260928_231448_2c0b634a-3c72-4fd3-b7f0-08beea099f4a_min.webp'],
-  sidewalk: ['assets/tex-sidewalk.png', HF + 'hf_20260928_231449_d720ea60-3803-4e90-bb9a-271d326e72fc_min.webp'],
-  glass: ['assets/tex-glass.png', HF + 'hf_20260928_231448_4160c073-e7a9-4487-b6df-17a6939b4f86_min.webp'],
+  brick: [...local('assets/tex-brick.png'), HF + 'hf_20260928_231449_e392cd57-e156-4120-bec4-ed91837fe0a8_min.webp'],
+  asphalt: [...local('assets/tex-asphalt.png'), HF + 'hf_20260928_231448_2c0b634a-3c72-4fd3-b7f0-08beea099f4a_min.webp'],
+  sidewalk: [...local('assets/tex-sidewalk.png'), HF + 'hf_20260928_231449_d720ea60-3803-4e90-bb9a-271d326e72fc_min.webp'],
+  glass: [...local('assets/tex-glass.png'), HF + 'hf_20260928_231448_4160c073-e7a9-4487-b6df-17a6939b4f86_min.webp'],
 };
 
 // Resolve the first image URL that loads (used for CSS backgrounds on menus).
