@@ -12,7 +12,7 @@ import path from 'node:path';
 import { launch, Results, sleep } from './lib.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
-const ALL = ['camera', 'city', 'people', 'dialogue', 'multiplayer', 'voice', 'offline'];
+const ALL = ['camera', 'city', 'people', 'dialogue', 'multiplayer', 'voice', 'hosting', 'offline'];
 const want = process.argv.slice(2).filter((a) => !a.startsWith('-'));
 const suites = want.length ? want : ALL;
 const PORT = Number(process.env.TEST_PORT || 8799);

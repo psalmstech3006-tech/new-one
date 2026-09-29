@@ -24,11 +24,29 @@ const CHAT_R = 40, SHOUT_R = 90, SHOVE_R = 2.4, RTC_R = 90;
 const MAX_SPEED = { foot: 9.5, vehicle: 75 };  // m/s, generous: sprint 7.2, fast cars ~60
 const DAY_SECONDS = 48 * 60;            // one game day = 48 real minutes (1 h = 2 min, as the client)
 
-fs.mkdirSync(DATA, { recursive: true });
+// ---- persistence: local JSON file by default; Upstash Redis (free tier, REST) when
+// UPSTASH_REDIS_REST_URL/TOKEN are set — for hosts whose disk is wiped on restart.
+const REDIS = process.env.UPSTASH_REDIS_REST_URL && { url: process.env.UPSTASH_REDIS_REST_URL, token: process.env.UPSTASH_REDIS_REST_TOKEN };
 const DB_FILE = path.join(DATA, 'accounts.json');
-const db = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) : { accounts: {} };
+async function loadDB() {
+  if (REDIS) { try { const r = await fetch(`${REDIS.url}/get/fw:accounts`, { headers: { authorization: `Bearer ${REDIS.token}` } }); const j = await r.json(); return j.result ? JSON.parse(j.result) : { accounts: {} }; } catch (e) { console.error('redis load failed', e.message); return { accounts: {} }; } }
+  fs.mkdirSync(DATA, { recursive: true });
+  return fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) : { accounts: {} };
+}
+async function saveDB() {
+  if (!dbDirty) return; dbDirty = false;
+  const body = JSON.stringify(db);
+  if (REDIS) { try { await fetch(`${REDIS.url}/set/fw:accounts`, { method: 'POST', headers: { authorization: `Bearer ${REDIS.token}` }, body }); } catch (e) { dbDirty = true; console.error('redis save failed', e.message); } return; }
+  fs.writeFileSync(DB_FILE + '.tmp', body); fs.renameSync(DB_FILE + '.tmp', DB_FILE);
+}
+const db = await loadDB();
 let dbDirty = false;
-setInterval(() => { if (dbDirty) { fs.writeFileSync(DB_FILE + '.tmp', JSON.stringify(db)); fs.renameSync(DB_FILE + '.tmp', DB_FILE); dbDirty = false; } }, 3000);
+setInterval(saveDB, 3000);
+for (const sig of ['SIGTERM', 'SIGINT']) process.on(sig, async () => { await saveDB(); process.exit(0); });
+
+// Browsers from which clients may connect (comma list, e.g. https://freeworld.infinityfreeapp.com).
+// Empty = allow any origin (local development).
+const ALLOWED = (process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
 
 const startedAt = Date.now(), clockAt0 = 17.25;
 const worldHour = () => (clockAt0 + ((Date.now() - startedAt) / 1000) * (24 / DAY_SECONDS)) % 24;
@@ -37,7 +55,7 @@ const worldHour = () => (clockAt0 + ((Date.now() - startedAt) / 1000) * (24 / DA
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.wasm': 'application/wasm' };
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent((req.url || '/').split('?')[0]);
-  if (url === '/health') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true, fw: true, players: players.size, hour: worldHour() })); return; }
+  if (url === '/health') { res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' }); res.end(JSON.stringify({ ok: true, fw: true, players: players.size, hour: worldHour() })); return; }
   let file = path.normalize(path.join(STATIC, url === '/' ? 'index.html' : url));
   if (!file.startsWith(STATIC)) { res.writeHead(403); res.end(); return; }
   fs.readFile(file, (err, buf) => {
@@ -65,8 +83,12 @@ function sanitizeDNA(d) {
   return out;
 }
 
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024 });
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 16 * 1024,
+  verifyClient: ({ origin }) => !ALLOWED.length || ALLOWED.includes(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin || '') });
+// keepalive: protocol pings every 25 s (hosting proxies drop idle sockets); dead clients are closed
+setInterval(() => { for (const ws of wss.clients) { if (ws.alive === false) { ws.terminate(); continue; } ws.alive = false; ws.ping(); } }, 25000);
 wss.on('connection', (ws, req) => {
+  ws.alive = true; ws.on('pong', () => { ws.alive = true; });
   const p = { id: nextId++, ws, name: 'Guest', account: null, dna: null, s: null, lastT: 0, ok: false, rate: { n: 0, t: Date.now() }, teleportGrace: 0 };
   const send = (m) => { if (ws.readyState === 1) ws.send(JSON.stringify(m)); };
   p.send = send;
@@ -172,4 +194,4 @@ setInterval(() => {
   }
 }, TICK);
 
-server.listen(PORT, () => console.log(`Free World server on http://localhost:${PORT} (ws /ws), data in ${DATA}`));
+server.listen(PORT, () => console.log(`Free World server on :${PORT} (ws /ws) — storage: ${REDIS ? 'Upstash Redis' : DATA}${ALLOWED.length ? ' — origins: ' + ALLOWED.join(' ') : ''}`));

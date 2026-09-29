@@ -1,0 +1,22 @@
+# Render Blueprint: the Free World multiplayer + WebRTC-signalling backend (free plan).
+# Dashboard -> New -> Blueprint -> pick this repository. Then set the env vars below.
+services:
+  - type: web
+    name: free-world-server
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev --ignore-scripts
+    startCommand: node server/index.mjs
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # the site(s) players load the game from, comma separated
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # optional persistence across restarts (free Upstash Redis database, REST credentials)
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false

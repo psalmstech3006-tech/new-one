@@ -7,3 +7,4 @@ public/assets/characters/player.glb
 assets-src/
 server/data/
 tests/last-run.json
+deploy/
