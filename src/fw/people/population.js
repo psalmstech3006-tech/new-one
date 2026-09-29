@@ -130,7 +130,8 @@ export class Population {
     if (arche === 'worker') {
       const work = pick(P.work);
       at(7.5 + jit(), 'work', work); at(12 + r(), 'lunch', pick([...P.shop, ...P.park])); at(13 + r() * 0.5, 'work', work);
-      at(17 + jit(), r() < 0.5 ? 'shop' : 'leisure', r() < 0.5 ? pick(P.shop) : pick([...P.leisure, ...P.park])); at(19 + r() * 2, 'home', home);
+      if (r() < 0.5) at(17 + jit(), 'shop', pick(P.shop)); else at(17 + jit(), 'leisure', pick([...P.leisure, ...P.park]));
+      at(19 + r() * 2, 'home', home);
     } else if (arche === 'student') {
       at(7.6 + jit() * 0.5, 'school', pick(P.school)); at(15 + r() * 0.5, 'leisure', pick([...P.park, ...P.shop])); at(18 + r(), 'home', home);
     } else if (arche === 'retiree') {
@@ -154,10 +155,10 @@ export class Population {
     if (!leg) { leg = from === to ? null : this.route(from.door, to.door); R.legCache.set(key, leg); }
     if (leg) {
       const d = since * R.speed;
-      if (d < leg.len) return { outdoor: true, leg, dist: d, pos: sample(leg, d), act: now.act };
+      if (d < leg.len) return { outdoor: true, leg, dist: d, pos: sample(leg, d), act: now.act, place: to };
     }
-    if (to.outdoor) return { outdoor: true, idle: true, pos: to.door.clone().add(new THREE.Vector2(((R.id * 7) % 5) - 2, ((R.id * 13) % 5) - 2)), act: now.act };
-    return { outdoor: false, inside: to, act: now.act };
+    if (to.outdoor) return { outdoor: true, idle: true, pos: to.door.clone().add(new THREE.Vector2(((R.id * 7) % 5) - 2, ((R.id * 13) % 5) - 2)), act: now.act, place: to };
+    return { outdoor: false, inside: to, act: now.act, place: to };
   }
 
   // ------------------------------------------------------------ runtime
@@ -184,6 +185,7 @@ export class Population {
     for (const c of this.pool) {
       if (c.inactive) continue;
       const R = c.resident, d = c.position.distanceTo(focus);
+      if (c.ai?.talking) continue; // never pulled away mid-conversation
       if (!want.has(R) && (d > this.R + 15 || !R.loc.outdoor || c.arrived)) this.release(c);
     }
     let spawns = 2;
@@ -230,6 +232,7 @@ export class Population {
     for (const c of this.pool) {
       if (c.inactive || c.state !== 'loco') continue;
       const ai = c.ai, p = c.position;
+      if (ai.talking) { const to = player.position.sub(p); c.fixedUpdate(dt, { dir: new THREE.Vector3(), gait: 'walk', jump: false, aimYaw: Math.atan2(to.x, to.z) }); continue; }
       let dir = new THREE.Vector3(), gait = ai.gait;
       if (ai.flee > 0) {
         ai.flee -= dt;
@@ -257,6 +260,13 @@ export class Population {
         const vv = v.velocity, sp = vv.length(); if (sp < 7) continue;
         const rel = p.clone().sub(v.position); if (rel.length() > 11) continue;
         if (rel.clone().normalize().dot(vv.clone().normalize()) > 0.7) { dir.set(-vv.z, 0, vv.x).normalize(); if (rel.dot(dir) < 0) dir.negate(); gait = 'sprint'; if (sp > 12 && !ai.flee) { ai.flee = 3; ai.from = v.position.clone(); } }
+      }
+      // stuck recovery: wanting to move but not getting anywhere -> side-step around the obstacle
+      if (dir.lengthSq() > 0.01) {
+        ai.prog = ai.prog || { p: p.clone(), t: 0, side: 1, dodge: 0 };
+        ai.prog.t += dt;
+        if (ai.prog.t > 0.8) { if (p.distanceTo(ai.prog.p) < 0.3) { ai.prog.dodge = 0.9; ai.prog.side *= -1; } ai.prog.p.copy(p); ai.prog.t = 0; }
+        if (ai.prog.dodge > 0) { ai.prog.dodge -= dt; const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(ai.prog.side); dir.addScaledVector(side, 1.6).normalize(); }
       }
       c.fixedUpdate(dt, { dir, gait, jump: false, aimYaw: dir.lengthSq() ? null : ai.idle ? ai.idleYaw : null });
     }

@@ -18,6 +18,7 @@ import { Net, resolveServer } from './net/client.js';
 import { Chat } from './net/chat.js';
 import { Voice } from './net/voice.js';
 import { Population } from './people/population.js';
+import { Conversations } from './people/conversation.js';
 
 const $ = (id) => document.getElementById(id);
 const status = (t, p) => { $('ldText').textContent = t; if (p != null) $('ldFill').style.width = `${Math.round(p * 100)}%`; };
@@ -122,6 +123,12 @@ async function main() {
   // city: scheduled residents with simulation tiers; proving ground: simple patrol walkers
   const population = city ? new Population(game, map, tierName, { budget: renderer.tier.peds + 4 }) : null;
   if (population) population.doors = city.doors;
+  // NPC conversations are text-only and client-local; they read the simulation, never drive it
+  const conv = population ? new Conversations({
+    population, district: map, player, getHour: () => timeOfDay,
+    onOpen: () => { input.enabled = false; document.exitPointerLock?.(); },
+    onClose: () => { input.enabled = true; $('view').requestPointerLock?.(); },
+  }) : null;
   const npcs = population ? population.chars : map.spawns.peds.slice(0, renderer.tier.peds).map((sp, i) => {
     const p = sp.pos || sp;
     const n = new Character(game, buildAvatar(randomDNA(7000 + i, { role: i % 11 === 5 ? 'worker' : 'civilian' })), p, { facing: i % 2 ? 0 : Math.PI });
@@ -289,7 +296,7 @@ async function main() {
   let hadLock = false;
   document.addEventListener('pointerlockchange', () => {
     if (document.pointerLockElement) { hadLock = true; return; }
-    if (hadLock && !paused && started && !window.__fwNoAutoPause && !creator.open && !chat.isOpen) setPaused(true);
+    if (hadLock && !paused && started && !window.__fwNoAutoPause && !creator.open && !chat.isOpen && !conv?.active) setPaused(true);
     hadLock = false;
   });
   $('btnResume').onclick = () => setPaused(false);
@@ -302,7 +309,7 @@ async function main() {
   status('Ready — click to play', 1);
   $('loading').classList.add('ready');
   $('loading').onclick = () => { $('loading').hidden = true; started = true; input.enabled = true; audio.init(); voice?.unlock(); $('view').requestPointerLock?.(); };
-  window.__fw = { get time() { return timeOfDay; }, get voice() { return voice; }, THREE, player, vehicles, npcs, population, cam, physics, renderer, map, city, input, creator, openCreator, get net() { return net; }, chat, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
+  window.__fw = { get time() { return timeOfDay; }, get voice() { return voice; }, conv, THREE, player, vehicles, npcs, population, cam, physics, renderer, map, city, input, creator, openCreator, get net() { return net; }, chat, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
     advance(sec) { for (let t = 0; t < sec; t += 1 / 60) { tick(1 / 60, false); input.pressed.clear(); } } };
 
   // ------------------------------------------------------------ frame loop
@@ -356,7 +363,9 @@ async function main() {
         moveCmd = { dir, gait, jump: input.hit('Space'), aimYaw: aiming ? cam.yaw : null };
         const near = vehicles.find((v) => !v.driver && v.doorWorld().distanceTo(player.position) < 3.2);
         const cityHint = city ? city.interact(player, { use: input.hit('KeyE'), lock: input.hit('KeyK') }) : '';
-        hint(cityHint || (near ? `Press F to enter the ${near.H.name}` : ''));
+        let talkHint = '';
+        if (!cityHint && conv && !conv.active) { const c = conv.candidate(); if (c) { talkHint = conv.prompt(c); if (input.hit('KeyE')) conv.start(c); } }
+        hint(cityHint || talkHint || (near ? `Press F to enter the ${near.H.name}` : ''));
       }
       cam.setState(firstPerson ? 'first' : current ? 'vehicle' : input.rmb ? 'aim' : city?.inside ? 'interior' : moveCmd.gait === 'sprint' && player.speed > 5 ? 'sprint' : 'explore');
     }
@@ -372,6 +381,7 @@ async function main() {
     if (net) { net.update(dt); stats.remote = net.remotes.size; stats.rtt = net.rtt; }
     if (voice && render) { voice.update(dt, net.remotes, (current ? current.position : player.position)); stats.voice = `${voice.state}, ${voice.peers.size} peers`; }
     for (const n of npcs) if (!n.inactive) n.sync(dt);
+    conv?.update();
     if (population) { population.update(dt, timeOfDay, current ? current.position : player.position); population.aware(player); stats.npcs = `${population.stats.embodied} embodied / ${population.stats.outdoors} outdoors / ${population.stats.residents} residents`; }
     stats.animMs = performance.now() - a0;
     map.update(renderer.night || 0);

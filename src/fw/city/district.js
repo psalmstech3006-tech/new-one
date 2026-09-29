@@ -483,8 +483,9 @@ export class District extends PropWorld {
     const add = (m, x, z, rot, opt) => models[m] && this.addModelProp(models[m], new THREE.Vector3(x, LOT_Y, z), rot, opt);
     for (const it of this.intersections) {
       if (it.x > 170 || it.x < -170) continue;
-      add('trafficlight', it.x - 7.2, it.z - 7.2, Math.PI);
-      add('trafficlight', it.x + 7.2, it.z + 7.2, 0);
+      // collider = the pole only (the mast arm overhangs the road/pavement and must not block people)
+      add('trafficlight', it.x - 6.9, it.z - 6.9, Math.PI, { fit: 0.18 });
+      add('trafficlight', it.x + 6.9, it.z + 6.9, 0, { fit: 0.18 });
     }
     // hydrants, bins, benches, dumpsters
     for (const lot of this.lots) {
