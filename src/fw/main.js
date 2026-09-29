@@ -12,7 +12,8 @@ import { Input } from './input.js';
 import { DevOverlay } from './overlay.js';
 import { Audio } from '../audio.js';
 import { loadTextures } from '../assets.js';
-import { buildHumanoid, LOOKS } from './humanoid.js';
+import { buildAvatar, randomDNA, defaultDNA } from './people/avatar.js';
+import { Creator, loadDNA } from './people/creator.js';
 
 const $ = (id) => document.getElementById(id);
 const status = (t, p) => { $('ldText').textContent = t; if (p != null) $('ldFill').style.width = `${Math.round(p * 100)}%`; };
@@ -29,7 +30,7 @@ async function loadCharacter() {
       return { scene: gltf.scene, clips: gltf.animations.filter((c) => /idle|walk|run/i.test(c.name)), scale: h > 0 ? 1.78 / h : 1, url: 'assets/characters/player.glb' };
     } catch { /* fall through to the built-in character */ }
   }
-  return buildHumanoid(LOOKS[0]);
+  return buildAvatar(loadDNA() || defaultDNA());
 }
 
 // Generated vehicle models (processed by tools/process-car.mjs): body LOD0-2 + split wheels.
@@ -114,10 +115,9 @@ async function main() {
   const GEN = { sedan: ['meridian', 'fw_veh_sedan_meridian'], coupe: ['vento', 'fw_veh_coupe_vento'], suv: ['ridgeback', 'fw_veh_suv_ridgeback'], patrol: ['patrol', 'fw_veh_sedan_meridian'] };
   const pick = (t) => (GEN[t] && game.models[GEN[t][1]] ? GEN[t][0] : t === 'patrol' ? 'sedan' : t);
   const vehicles = map.spawns.cars.map(([t, p, h, c]) => new Vehicle(game, pick(t), p, h, c || '#1f3f66'));
-  const npcLooks = LOOKS.slice(1).map((l) => buildHumanoid(l));
   const npcs = map.spawns.peds.slice(0, renderer.tier.peds).map((sp, i) => {
     const p = sp.pos || sp;
-    const n = new Character(game, npcLooks[i % npcLooks.length], p, { facing: i % 2 ? 0 : Math.PI });
+    const n = new Character(game, buildAvatar(randomDNA(7000 + i, { role: i % 11 === 5 ? 'worker' : 'civilian' })), p, { facing: i % 2 ? 0 : Math.PI });
     n.ai = { dir: sp.dir ?? (i % 2 ? 1 : -1), wait: Math.random() * 3, gait: Math.random() < 0.85 ? 'walk' : 'run' };
     if (sp.ring != null) { n.ai.ring = map.pedRings[sp.ring]; n.ai.next = sp.dir > 0 ? (sp.seg + 1) % 4 : sp.seg; }
     return n;
@@ -127,6 +127,11 @@ async function main() {
   const input = new Input($('view'));
   input.sens = Number(localStorage.getItem('fw-sens') || 1);
   const overlay = new DevOverlay();
+  const creator = new Creator({
+    onChange: (asset) => player.setModel(asset),
+    onClose: () => { input.enabled = true; $('view').requestPointerLock?.(); },
+  });
+  const openCreator = () => { if (current || player.state !== 'loco') return; creator.show(); input.enabled = false; document.exitPointerLock?.(); };
   const audio = new Audio();
   renderer.setTime(17.25);
   renderer.prepareMaterials();
@@ -255,10 +260,11 @@ async function main() {
   let hadLock = false;
   document.addEventListener('pointerlockchange', () => {
     if (document.pointerLockElement) { hadLock = true; return; }
-    if (hadLock && !paused && started && !window.__fwNoAutoPause) setPaused(true);
+    if (hadLock && !paused && started && !window.__fwNoAutoPause && !creator.open) setPaused(true);
     hadLock = false;
   });
   $('btnResume').onclick = () => setPaused(false);
+  if ($('btnChar')) $('btnChar').onclick = () => { setPaused(false); openCreator(); };
   $('optTier').onchange = (e) => { localStorage.setItem('fw-tier', e.target.value); location.reload(); };
   $('optSens').value = input.sens;
   $('optSens').oninput = (e) => { input.sens = Number(e.target.value); localStorage.setItem('fw-sens', e.target.value); };
@@ -267,7 +273,7 @@ async function main() {
   status('Ready — click to play', 1);
   $('loading').classList.add('ready');
   $('loading').onclick = () => { $('loading').hidden = true; started = true; input.enabled = true; audio.init(); $('view').requestPointerLock?.(); };
-  window.__fw = { player, vehicles, npcs, cam, physics, renderer, map, city, input, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
+  window.__fw = { player, vehicles, npcs, cam, physics, renderer, map, city, input, creator, openCreator, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
     advance(sec) { for (let t = 0; t < sec; t += 1 / 60) { tick(1 / 60, false); input.pressed.clear(); } } };
 
   // ------------------------------------------------------------ frame loop
@@ -290,6 +296,7 @@ async function main() {
       const look = input.look();
       cam.look(look.x, look.y);
       if (input.hit('F3')) overlay.toggle();
+      if (input.hit('KeyP')) openCreator();
       if (input.hit('KeyV')) firstPerson = !firstPerson;
       if (input.hit('KeyQ')) cam.swapShoulder();
       if (input.wheel) cam.cycleDistance();
@@ -344,7 +351,8 @@ async function main() {
 
     const headPos = current ? current.seatWorld().add(new THREE.Vector3(0, 0.75, 0)) : player.position.add(new THREE.Vector3(0, 1.66, 0)).addScaledVector(cam.flatForward, 0.15);
     let camDist = 5;
-    if (window.__fwCamOverride) { const o = window.__fwCamOverride; renderer.camera.position.set(o[0], o[1], o[2]); renderer.camera.lookAt(o[3], o[4], o[5]); }
+    if (creator.open) { const f = new THREE.Vector3(Math.sin(player.facing), 0, Math.cos(player.facing)), pp = player.position; renderer.camera.position.copy(pp).addScaledVector(f, 2.6).add(new THREE.Vector3(0, 1.35, 0)).addScaledVector(new THREE.Vector3(f.z, 0, -f.x), -0.7); renderer.camera.lookAt(pp.x, pp.y + 1.0, pp.z); }
+    else if (window.__fwCamOverride) { const o = window.__fwCamOverride; renderer.camera.position.set(o[0], o[1], o[2]); renderer.camera.lookAt(o[3], o[4], o[5]); }
     else camDist = cam.update(dt, { pos: player.position, vehicle: current, exclude: current ? current.collider : player.collider, headPos });
     player.root.visible = player.visible && !(firstPerson && !current) && camDist > 0.45;
 

@@ -6,7 +6,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 // produces — so generated characters are drop-in replacements.
 // Everything is one skinned mesh with vertex colours: one draw call per character.
 
-const BONES = [
+export const BONES = [
   // name, parent, rest position (world, metres; character faces +Z, its left is +X)
   ['Hips', null, [0, 0.95, 0]],
   ['Spine', 'Hips', [0, 1.05, 0]],
@@ -47,7 +47,7 @@ export const LOOKS = [
 const V = (a) => new THREE.Vector3(...a);
 
 // A tapered capsule-like limb from a to b with elliptical cross-section.
-function limb(a, b, r0, r1, flat = 1, segs = 12) {
+export function limb(a, b, r0, r1, flat = 1, segs = 12) {
   const len = a.distanceTo(b);
   const pts = [];
   const cap = 5;
@@ -64,12 +64,12 @@ function limb(a, b, r0, r1, flat = 1, segs = 12) {
   g.translate(a.x, a.y, a.z);
   return g;
 }
-function ellipsoid(c, rx, ry, rz, seg = 16) {
+export function ellipsoid(c, rx, ry, rz, seg = 16) {
   const g = new THREE.SphereGeometry(1, seg, Math.round(seg * 0.75));
   g.scale(rx, ry, rz); g.translate(c[0], c[1], c[2]);
   return g;
 }
-function roundedBox(c, w, h, d, r = 0.02) {
+export function roundedBox(c, w, h, d, r = 0.02) {
   const g = new THREE.BoxGeometry(w, h, d, 3, 2, 4);
   // push vertices outward toward a rounded box
   const p = g.attributes.position, v = new THREE.Vector3();
@@ -214,4 +214,4 @@ const idle = clip('Idle', 3.2, (p) => {
     HipsY: 0.004 * s,
   };
 });
-const CLIPS = [idle, walk, run];
+export const CLIPS = [idle, walk, run];

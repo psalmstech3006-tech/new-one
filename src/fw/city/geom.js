@@ -108,8 +108,9 @@ export class GeoBuilder {
 
 // Deterministic RNG per building so layouts are stable between sessions and players.
 export function rng(seed) {
-  let s = (seed * 2654435761) >>> 0 || 1;
-  const f = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  // mix the seed (murmur3 finaliser) so consecutive seeds give unrelated sequences
+  let s = (seed * 2654435761) >>> 0; s ^= s >>> 16; s = Math.imul(s, 0x85ebca6b) >>> 0; s ^= s >>> 13; s = Math.imul(s, 0xc2b2ae35) >>> 0; s ^= s >>> 16; s = s || 1;
+  const f = () => { s = (s + 0x6d2b79f5) >>> 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   f.range = (a, b) => a + f() * (b - a);
   f.int = (a, b) => Math.floor(f.range(a, b + 1));
   f.pick = (arr) => arr[Math.floor(f() * arr.length)];

@@ -33,18 +33,8 @@ export class Character {
     const phys = game.physics, w = phys.world;
     // visual
     this.root = new THREE.Group();
-    this.model = SkeletonUtils.clone(asset.scene);
-    this.model.scale.setScalar(asset.scale);
-    this.model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
-    this.root.add(this.model);
     game.scene.add(this.root);
-    this.bones = {};
-    this.model.traverse((o) => { if (o.isBone) this.bones[norm(o.name)] = o; });
-    this.mixer = new THREE.AnimationMixer(this.model);
-    this.actions = {};
-    for (const clip of asset.clips) {
-      const a = this.mixer.clipAction(clip); a.play(); a.setEffectiveWeight(0); this.actions[clip.name.toLowerCase()] = a;
-    }
+    this.setModel(asset);
     // physics capsule (kinematic, moved by the character controller)
     this.halfH = 0.55; this.radius = 0.3;
     this.body = w.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(pos.x, pos.y + this.halfH + this.radius + 0.05, pos.z));
@@ -76,6 +66,28 @@ export class Character {
     this.stagger = 0;
     this.visible = true;
     this.sync(0);
+  }
+
+  // (Re)build the visual body from an asset ({scene, clips, scale}); used by the character
+  // creator and for remote players whose appearance arrives over the network.
+  setModel(asset) {
+    if (this.state === 'ragdoll' || this.state === 'getup') return false;
+    const prevShadow = this.model ? this.model.children.some((o) => o.castShadow) : true;
+    if (this.model) { this.root.remove(this.model); this.mixer?.stopAllAction(); }
+    this.asset = asset;
+    this.model = SkeletonUtils.clone(asset.scene);
+    this.model.scale.setScalar(asset.scale);
+    this.model.traverse((o) => { if (o.isMesh) { o.castShadow = prevShadow; o.receiveShadow = true; o.frustumCulled = false; } });
+    this.root.add(this.model);
+    this.bones = {};
+    this.model.traverse((o) => { if (o.isBone) this.bones[norm(o.name)] = o; });
+    this.mixer = new THREE.AnimationMixer(this.model);
+    this.actions = {};
+    for (const clip of asset.clips) {
+      const a = this.mixer.clipAction(clip); a.play(); a.setEffectiveWeight(0); this.actions[clip.name.toLowerCase()] = a;
+    }
+    this.shadowOn = undefined;
+    return true;
   }
 
   get position() { const t = this.body.translation(); return new THREE.Vector3(t.x, t.y - this.halfH - this.radius - this.skin * 0.9, t.z); }
