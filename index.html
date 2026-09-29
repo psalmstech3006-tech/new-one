@@ -30,6 +30,10 @@
     #vname { font-size: 12px; opacity: .7; letter-spacing: .15em; text-transform: uppercase; }
     #hint { position: absolute; left: 28px; top: 24px; background: rgba(0,0,0,.65); padding: 10px 14px; font-size: 14px; opacity: 0; transition: opacity .2s; border-left: 3px solid var(--accent); }
     #clock { position: absolute; right: 28px; top: 22px; font-size: 16px; opacity: .85; text-shadow: 0 2px 3px #000; }
+    #voice { position: absolute; left: 28px; bottom: 24px; display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: rgba(0,0,0,.55); color: #fff; border: 0; border-radius: 18px; font: 12px system-ui, sans-serif; cursor: pointer; pointer-events: auto; }
+    #voice .ic { width: 10px; height: 10px; border-radius: 50%; background: #777; }
+    #voice[data-state=live] .ic { background: #4cd964; box-shadow: 0 0 8px #4cd964; } #voice[data-state=muted] .ic { background: #e0b85a; } #voice[data-state=denied] .ic, #voice[data-state=unavailable] .ic { background: #e05a5a; }
+    #voice .bar { width: 44px; height: 4px; background: rgba(255,255,255,.2); border-radius: 2px; overflow: hidden; } #voice .lvl { display: block; height: 100%; width: 0; background: #4cd964; }
     #street { position: absolute; right: 28px; top: 46px; font-size: 13px; letter-spacing: .08em; opacity: .8; text-shadow: 0 2px 3px #000; text-transform: uppercase; }
     #reticle { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.7); opacity: .8; }
     #pause { position: fixed; inset: 0; z-index: 25; background: rgba(6,8,12,.82); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; }
@@ -51,6 +55,7 @@
     <div id="hint"></div>
     <div id="clock"></div>
     <div id="street"></div>
+    <button id="voice" hidden data-state=""><span class="ic"></span><span class="t">Voice</span><span class="bar"><span class="lvl"></span></span></button>
     <div id="hudVeh" hidden><div id="vname"></div><div><span id="spd">0</span> <small>MPH</small></div>
       <div id="gearRow"><div class="rpmbar"><div id="rpm"></div></div><span id="gear">1</span></div></div>
   </div>
@@ -60,7 +65,7 @@
     <div class="bar"><div id="ldFill"></div></div>
     <div id="ldText">Loading</div>
     <div class="keys"><b>WASD</b> move · <b>Mouse</b> look · <b>Shift</b> sprint · <b>Caps/Alt</b> walk · <b>Space</b> jump / handbrake · <b>RMB</b> aim ·
-      <b>E</b> doors / elevators · <b>P</b> character · <b>Y</b> chat · <b>X</b> wave (Shift+X cheer) · <b>K</b> lock (with key) · <b>F</b> enter/exit car · <b>C</b> look behind · <b>V</b> first person · <b>Q</b> swap shoulder · <b>Wheel</b> camera distance ·
+      <b>E</b> doors / elevators · <b>P</b> character · <b>Y</b> chat · <b>M</b> voice on/mute · <b>X</b> wave (Shift+X cheer) · <b>K</b> lock (with key) · <b>F</b> enter/exit car · <b>C</b> look behind · <b>V</b> first person · <b>Q</b> swap shoulder · <b>Wheel</b> camera distance ·
       <b>G</b> shove (Shift+G hard) · <b>H</b> test ragdoll · <b>T</b> time +1h · <b>F3</b> perf overlay · <b>Esc</b> settings</div>
   </section>
   <section id="pause" hidden>
@@ -73,7 +78,7 @@
         <tr><td>On foot</td><td>WASD, Shift sprint, Caps/Alt walk, Space jump, RMB aim, E doors/elevators, K lock/unlock (key ring)</td></tr>
         <tr><td>Vehicle</td><td>W throttle, S brake/reverse, Space handbrake, C look behind, E horn</td></tr>
         <tr><td>Character</td><td>P opens the character creator (saved on this device)</td></tr>
-        <tr><td>Online</td><td>Y proximity chat (! to shout), X wave / Shift+X cheer, G shove players</td></tr>
+        <tr><td>Online</td><td>M proximity voice (on / mute), Y proximity chat (! to shout), X wave / Shift+X cheer, G shove players</td></tr>
         <tr><td>Camera</td><td>Wheel distance, Q shoulder, V first person</td></tr>
         <tr><td>Test</td><td>G / Shift+G shove, H ragdoll, T time of day, F3 overlay</td></tr>
       </table>

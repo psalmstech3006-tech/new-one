@@ -24,6 +24,7 @@ export async function resolveServer() {
   if (!location.protocol.startsWith('http')) return null; // file:// offline build
   const get = async (u) => { const c = new AbortController(); const t = setTimeout(() => c.abort(), 2500); try { const r = await fetch(u, { signal: c.signal, cache: 'no-store' }); return r.ok ? await r.json() : null; } catch { return null; } finally { clearTimeout(t); } };
   const cfg = await get('fw-config.json');
+  if (cfg) window.__fwConfig = cfg; // e.g. { server, iceServers: [{urls, username, credential}] }
   if (cfg?.server) return cfg.server;
   const h = await get('health');
   if (h?.fw) return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
@@ -60,6 +61,7 @@ export class Net {
     ws.onclose = () => {
       this.connected = false; this.onStatus?.('offline — retrying');
       for (const id of [...this.remotes.keys()]) this.remove(id);
+      if (this.voice) for (const id of [...this.voice.peers.keys()]) this.voice.closePeer(id);
       setTimeout(() => this.connect(), 3000);
     };
     ws.onerror = () => {};
@@ -72,6 +74,7 @@ export class Net {
         this.connected = true; this.id = m.id; this.name = m.name;
         localStorage.setItem(TOKEN, m.token);
         this.onStatus?.(`online as ${m.name}`); this.onHour?.(m.hour);
+        if (this.voice?.stream) this.send({ t: 'voice', on: true, muted: this.voice.state === 'muted' }); // re-announce after reconnect
         clearInterval(this.pingTimer); this.pingTimer = setInterval(() => this.send({ t: 'ping', c: performance.now() }), 2000);
         break;
       case 'join': this.ensure(m.id, m.name, m.dna); break;
@@ -93,6 +96,8 @@ export class Net {
       case 'shoved': this.onShoved?.(m); break;
       case 'correct': this.player.body.setTranslation({ x: m.x, y: m.y + this.player.halfH + this.player.radius + 0.1, z: m.z }, true); break;
       case 'pong': this.rtt = performance.now() - m.c; break;
+      case 'rtc': this.voice?.onSignal(m); break;
+      case 'voicestate': this.voice?.onVoiceState(m); break;
     }
   }
 
@@ -112,6 +117,7 @@ export class Net {
   remove(id) {
     const r = this.remotes.get(id); if (!r) return;
     if (r.vehicle) this.dropVehicle(r);
+    this.voice?.closePeer(id); this.voice?.remoteVoice.delete(id);
     r.char.dispose();
     this.remotes.delete(id);
     this.onLeave?.(id);
@@ -179,6 +185,9 @@ export class Net {
         ch.sync(dt);
       }
       if (r.bubble && (r.bubbleT -= dt) <= 0) { ch.root.remove(r.bubble); r.bubble = null; }
+      // speaking indicator: the name tag lights up green while this player's voice is heard
+      const talking = !!this.voice?.peers.get(r.id)?.speaking;
+      if (talking !== r.talking) { r.talking = talking; r.tag.material.color.set(talking ? '#7dffa0' : '#ffffff'); r.tag.scale.set(talking ? 1.35 : 1.2, talking ? 0.34 : 0.3, 1); }
       if (r.emote) { r.emote.t -= dt; this.animateEmote(ch, r.emote); if (r.emote.t <= 0) r.emote = null; }
     }
   }

@@ -20,7 +20,7 @@ const DATA = path.resolve(process.env.DATA_DIR || path.join(ROOT, 'server', 'dat
 const STATIC = path.join(ROOT, 'dist');
 const TICK = 1000 / 15;                 // snapshot rate
 const VIEW_R = 260;                     // interest radius (m)
-const CHAT_R = 40, SHOUT_R = 90, SHOVE_R = 2.4;
+const CHAT_R = 40, SHOUT_R = 90, SHOVE_R = 2.4, RTC_R = 90;
 const MAX_SPEED = { foot: 9.5, vehicle: 75 };  // m/s, generous: sprint 7.2, fast cars ~60
 const DAY_SECONDS = 48 * 60;            // one game day = 48 real minutes (1 h = 2 min, as the client)
 
@@ -74,7 +74,7 @@ wss.on('connection', (ws, req) => {
     // flood protection: max 40 messages/second
     const now = Date.now();
     if (now - p.rate.t > 1000) { p.rate.t = now; p.rate.n = 0; }
-    if (++p.rate.n > 40) return;
+    if (++p.rate.n > 60) return;
     let m; try { m = JSON.parse(raw); } catch { return; }
     if (!m || typeof m.t !== 'string') return;
     if (!p.ok && m.t !== 'hello') return;
@@ -96,7 +96,7 @@ const handlers = {
     players.set(p.id, p);
     p.send({ t: 'welcome', id: p.id, token, name: p.name, hour: worldHour(), dayLen: DAY_SECONDS });
     // introduce everyone to everyone
-    for (const o of players.values()) if (o !== p) { p.send({ t: 'join', id: o.id, name: o.name, dna: o.dna }); o.send({ t: 'join', id: p.id, name: p.name, dna: p.dna }); }
+    for (const o of players.values()) if (o !== p) { p.send({ t: 'join', id: o.id, name: o.name, dna: o.dna }); if (o.voice) p.send({ t: 'voicestate', id: o.id, ...o.voice }); o.send({ t: 'join', id: p.id, name: p.name, dna: p.dna }); }
   },
   dna(p, m) {
     p.dna = sanitizeDNA(m.dna);
@@ -136,6 +136,21 @@ const handlers = {
     o.send({ t: 'shoved', by: p.id, vx: (dx / l) * k, vz: (dz / l) * k });
   },
   ping(p, m) { p.send({ t: 'pong', c: m.c }); },
+  // ---- voice: the server relays WebRTC signalling only (audio is peer-to-peer) ----
+  voice(p, m) {
+    p.voice = { on: !!m.on, muted: !!m.muted };
+    broadcast({ t: 'voicestate', id: p.id, ...p.voice }, p, p.s, VIEW_R);
+  },
+  rtc(p, m) {
+    const o = players.get(m.to); if (!o || !o.s || !p.s) return;
+    if (!m.bye && Math.hypot(o.s.x - p.s.x, o.s.z - p.s.z) > RTC_R) return; // signalling only between nearby players
+    const payload = { t: 'rtc', from: p.id };
+    if (m.sdp && typeof m.sdp.sdp === 'string' && m.sdp.sdp.length < 12000 && ['offer', 'answer'].includes(m.sdp.type)) payload.sdp = { type: m.sdp.type, sdp: m.sdp.sdp };
+    else if (m.ice && typeof m.ice.candidate === 'string' && m.ice.candidate.length < 600) payload.ice = { candidate: m.ice.candidate, sdpMid: clean(m.ice.sdpMid, 8), sdpMLineIndex: num(m.ice.sdpMLineIndex, 0, 8) };
+    else if (m.bye) payload.bye = 1;
+    else return;
+    o.send(payload);
+  },
 };
 
 function broadcast(msg, except, origin, radius) {

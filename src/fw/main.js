@@ -16,6 +16,7 @@ import { buildAvatar, randomDNA, defaultDNA } from './people/avatar.js';
 import { Creator, loadDNA } from './people/creator.js';
 import { Net, resolveServer } from './net/client.js';
 import { Chat } from './net/chat.js';
+import { Voice } from './net/voice.js';
 import { Population } from './people/population.js';
 
 const $ = (id) => document.getElementById(id);
@@ -163,6 +164,8 @@ async function main() {
   }) : null;
   if (city && net) city.onTeleport = () => net.send({ t: 'respawn' });
   if (net) player.onTeleport = () => net.send({ t: 'respawn' });
+  const voice = net ? new Voice(net, { camera: renderer.camera, hud: $('voice') }) : null;
+  if (net) { net.voice = voice; $('voice').hidden = false; $('voice').onclick = () => voice.toggle(); }
 
   // ------------------------------------------------------------ fixed-step control
   physics.onFixed((dt) => {
@@ -298,8 +301,8 @@ async function main() {
   let started = false;
   status('Ready — click to play', 1);
   $('loading').classList.add('ready');
-  $('loading').onclick = () => { $('loading').hidden = true; started = true; input.enabled = true; audio.init(); $('view').requestPointerLock?.(); };
-  window.__fw = { get time() { return timeOfDay; }, THREE, player, vehicles, npcs, population, cam, physics, renderer, map, city, input, creator, openCreator, get net() { return net; }, chat, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
+  $('loading').onclick = () => { $('loading').hidden = true; started = true; input.enabled = true; audio.init(); voice?.unlock(); $('view').requestPointerLock?.(); };
+  window.__fw = { get time() { return timeOfDay; }, get voice() { return voice; }, THREE, player, vehicles, npcs, population, cam, physics, renderer, map, city, input, creator, openCreator, get net() { return net; }, chat, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
     advance(sec) { for (let t = 0; t < sec; t += 1 / 60) { tick(1 / 60, false); input.pressed.clear(); } } };
 
   // ------------------------------------------------------------ frame loop
@@ -324,6 +327,7 @@ async function main() {
       if (input.hit('F3')) overlay.toggle();
       if (input.hit('KeyP')) openCreator();
       if (input.hit('KeyY') && net) chat.open();
+      if (input.hit('KeyM') && voice) voice.toggle();
       if (input.hit('KeyX') && !current) { localEmote = { e: input.down('ShiftLeft') ? 'cheer' : 'wave', t: 2.5 }; net?.send({ t: 'emote', e: localEmote.e }); }
       if (input.hit('KeyV')) firstPerson = !firstPerson;
       if (input.hit('KeyQ')) cam.swapShoulder();
@@ -366,6 +370,7 @@ async function main() {
     player.sync(dt);
     if (localEmote) { localEmote.t -= dt; if (net) net.animateEmote(player, localEmote); if (localEmote.t <= 0) localEmote = null; }
     if (net) { net.update(dt); stats.remote = net.remotes.size; stats.rtt = net.rtt; }
+    if (voice && render) { voice.update(dt, net.remotes, (current ? current.position : player.position)); stats.voice = `${voice.state}, ${voice.peers.size} peers`; }
     for (const n of npcs) if (!n.inactive) n.sync(dt);
     if (population) { population.update(dt, timeOfDay, current ? current.position : player.position); population.aware(player); stats.npcs = `${population.stats.embodied} embodied / ${population.stats.outdoors} outdoors / ${population.stats.residents} residents`; }
     stats.animMs = performance.now() - a0;
