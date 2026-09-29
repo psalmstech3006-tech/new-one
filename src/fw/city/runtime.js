@@ -124,6 +124,7 @@ export class CityRuntime {
   }
 
   update(dt, pos) {
+    this.tickRide(dt);
     this.stream(pos);
     this.inside = this.whereIs(pos);
     // interiors are only seen from inside or through nearby glass/open doors
@@ -157,14 +158,26 @@ export class CityRuntime {
     return '';
   }
 
+  // Elevator ride runs on simulation time (not wall-clock timers) so it is deterministic:
+  // fade out 0.25 s, move the player, fade in.
   ride(player, b, a, stop) {
+    if (this.pendingRide) return;
     this.onTeleport?.();
     this.fade.style.opacity = 1;
-    setTimeout(() => {
-      const w = this.world(b, a.dx, a.stops[stop], a.dz + 0.4);
-      player.body.setTranslation({ x: w.x, y: w.y + player.halfH + player.radius + 0.08, z: w.z }, true);
-      player.speed = 0;
-      setTimeout(() => { this.fade.style.opacity = 0; }, 250);
-    }, 260);
+    const w = this.world(b, a.dx, a.stops[stop], a.dz + 0.4);
+    this.pendingRide = { player, to: { x: w.x, y: w.y + player.halfH + player.radius + 0.08, z: w.z }, t: 0.25 };
+  }
+
+  tickRide(dt) {
+    const r = this.pendingRide; if (!r) return;
+    r.t -= dt;
+    if (r.t > 0) return;
+    if (!r.done) {
+      r.done = true; r.t = 0.25;
+      r.player.body.setTranslation(r.to, true); r.player.body.setNextKinematicTranslation(r.to);
+      r.player.speed = 0; r.player.velY = 0;
+      return;
+    }
+    this.fade.style.opacity = 0; this.pendingRide = null;
   }
 }
