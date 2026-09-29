@@ -60,6 +60,21 @@ export class Physics {
     return col;
   }
 
+  // One fixed body at (x,y,z,rotY) carrying many local cuboids {cx,cy,cz,hx,hy,hz,rotY}.
+  // Used for whole buildings/interiors so they can be streamed in and out with one call.
+  staticCompound(list, x, y, z, rotY = 0, friction = 0.9) {
+    const body = this.world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(x, y, z)
+      .setRotation({ x: 0, y: Math.sin(rotY / 2), z: 0, w: Math.cos(rotY / 2) }));
+    for (const c of list) {
+      const d = R.ColliderDesc.cuboid(Math.max(0.01, c.hx), Math.max(0.01, c.hy), Math.max(0.01, c.hz)).setFriction(friction)
+        .setTranslation(c.cx, c.cy, c.cz).setCollisionGroups(groups(L.WORLD, ALL));
+      if (c.rotY) d.setRotation({ x: 0, y: Math.sin(c.rotY / 2), z: 0, w: Math.cos(c.rotY / 2) });
+      this.world.createCollider(d, body);
+    }
+    return body;
+  }
+  removeBody(body) { if (body) this.world.removeRigidBody(body); }
+
   staticTrimesh(geometry, matrix) {
     const g = geometry.index ? geometry.toNonIndexed() : geometry.clone();
     g.applyMatrix4(matrix);

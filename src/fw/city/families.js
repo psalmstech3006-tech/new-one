@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { genericBuilding, T } from './archkit.js';
 import { rng } from './geom.js';
+import { stairwellFor } from './interiors.js';
 
 // ============================================================================
 // Building families. Each returns { group, colliders, doors, height, tris, footprint, meta }.
@@ -9,12 +10,12 @@ import { rng } from './geom.js';
 // ============================================================================
 
 const BRICKS = ['#a4553f', '#8e4a38', '#b86a4f', '#7a3f31', '#9c6048', '#6e3b2c'];
-const STUCCO = ['#e9dfcc', '#d9c9a8', '#cfd6d8', '#e8d2c0', '#c9b79c', '#dcd7cd', '#b8c2b0'];
-const SIDING = ['#9fb6c8', '#c9c1a6', '#a8b89a', '#e4ddcf', '#b7a38b', '#8fa3ad', '#d3c4b3'];
+const STUCCO = ['#e2cfa8', '#d4b98c', '#b9c7cc', '#e0bfa4', '#c4a784', '#d8cbb4', '#a9b89c', '#e3d3a0', '#c98f6e'];
+const SIDING = ['#8ea9c0', '#c7b98f', '#96ad86', '#dcd2bd', '#b0957a', '#7f98a6', '#c9b49c', '#a3867a', '#e0d6a8'];
 const ROOFS = ['#4a4540', '#5a4a42', '#3d4247', '#6b4a3a', '#4f4a46'];
 const TRIMS = ['#f2efe8', '#e8e0d0', '#d8d2c6', '#f7f4ee'];
 
-const out = (res, meta) => { res.meta = meta; res.group.userData.meta = meta; return res; };
+const out = (res, meta) => { res.meta = { gfh: res.gfh, ...meta }; res.group.userData.meta = res.meta; return res; };
 
 // ---------------------------------------------------------------- residential
 export function house(M, atlas, seed, { size = 'medium', name = 'House' } = {}) {
@@ -26,7 +27,7 @@ export function house(M, atlas, seed, { size = 'medium', name = 'House' } = {}) 
   const trim = r.pick(TRIMS), roof = r.chance(0.5) ? 'gable' : 'hip';
   const doorU = r.pick([-w / 4, 0, w / 5]);
   const res = genericBuilding({
-    name, w, d, floors, gfh: 3.0, fh: 2.9, wallMat: mat, wallColor, trimColor: trim, frame: trim, roof, roofColor: r.pick(ROOFS),
+    name, w, d, floors, gfh: 3.0, fh: 2.9, wallMat: mat, wallColor, trimColor: trim, frame: trim, roof, roofColor: r.pick(ROOFS), stairwell: floors > 1 ? stairwellFor('house', w, d, 3.0) : null,
     shutters: r.chance(0.5) ? r.pick(['#2d3b4a', '#3f5a3a', '#5a2f2a', '#303030']) : null, plinthH: 0.5, plinthColor: '#9a948a',
     doors: [{ side: 'front', u: doorU, w: 1.0, h: 2.15, style: 'wood', locked: true, keyId: `key_${name}` }, { side: 'back', u: -w / 4, w: 0.95, h: 2.1, locked: true, keyId: `key_${name}` }],
     winW: 1.2, winH: 1.35, module: 2.8, margin: 0.8, belts: floors > 1,
@@ -81,11 +82,12 @@ export function townhouseRow(M, atlas, seed, { units = 4, name = 'Townhouses' } 
     name, w, d, floors, gfh: 3.1, fh: 3.0, wallMat: 'brick', wallColor: colors[0], trimColor: '#efe9dd', lintel: '#d9d2c3',
     doors: Array.from({ length: units }, (_, i) => ({ side: 'front', u: -w / 2 + uw * (i + 0.25), w: 1.0, locked: true, keyId: `key_${name}_${i}` })),
     winW: 1.1, winH: 1.6, module: uw / 2, margin: 0, cornice: true, corniceDepth: 0.4,
+    wallSplits: { front: Array.from({ length: units - 1 }, (_, i) => -w / 2 + uw * (i + 1)), back: Array.from({ length: units - 1 }, (_, i) => -w / 2 + uw * (i + 1)) },
+    wallColorAt: (side, u) => (side === 'front' ? colors[Math.min(units - 1, Math.floor((u + w / 2) / uw))] : side === 'back' ? colors[Math.min(units - 1, Math.floor((w / 2 - u) / uw))] : side === 'left' ? colors[0] : colors[units - 1]),
     extra(B) {
       for (let i = 0; i < units; i++) {
         const x0 = -w / 2 + uw * i;
-        // per-unit colour wash over the facade (thin skin) + stoop
-        B.box('brick', x0 + uw / 2, 3.1 + 3.0 * 2 / 2 + 1.5, d / 2 + 0.02, uw - 0.1, 3.0 * 2 + 3.1 - 0.4, 0.04, colors[i], { tile: 2.4 });
+        // stoop
         B.box('stone', x0 + uw * 0.25, 0.35, d / 2 + 1.1, 1.6, 0.7, 1.8, '#a8a196', { collide: true });
         for (let k = 0; k < 3; k++) B.box('stone', x0 + uw * 0.25, 0.12 + k * 0.23, d / 2 + 2.1 + k * -0.3, 1.6, 0.23, 0.35, '#a8a196');
         if (i > 0) B.box('trim', x0, 5.3, d / 2 + 0.1, 0.25, 9.6, 0.2, '#e3dccf');
@@ -99,7 +101,7 @@ export function apartmentBlock(M, atlas, seed, { floors = 5, w = 24, d = 16, nam
   const r = rng(seed);
   const mat = r.chance(0.6) ? 'stucco' : 'brick', col = mat === 'brick' ? r.pick(BRICKS) : r.pick(STUCCO);
   const res = genericBuilding({
-    name, w, d, floors, gfh: 3.4, fh: 3.0, wallMat: mat, wallColor: col, trimColor: '#ece6da', lintel: mat === 'brick' ? '#d9d2c3' : null,
+    name, w, d, floors, gfh: 3.4, fh: 3.0, wallMat: mat, wallColor: col, trimColor: '#ece6da', lintel: mat === 'brick' ? '#d9d2c3' : null, stairwell: enterable ? stairwellFor('apartmentLobby', w, d, 3.4) : null,
     doors: [{ side: 'front', u: 0, w: 1.8, h: 2.5, kind: 'double', style: 'glass', label: `${name} lobby` }],
     balconies: (f, i, n) => (i + f) % 2 === 0 && i !== Math.floor(n / 2), module: 3.2, winW: 1.5,
     signs: [{ text: name.toUpperCase(), y: 3.0, w: 4, h: 0.5, style: { bg: '#20262e', font: 'bold 64px Georgia, serif' } }],
@@ -143,8 +145,8 @@ export function mixedUse(M, atlas, seed, { shops, floors = 3, w = 22, d = 16, na
   const shopSpecs = shops.map((s, i) => ({ ...s, u0: -w / 2 + (w / shops.length) * i + 0.15, u1: -w / 2 + (w / shops.length) * (i + 1) - 0.15 }));
   const res = genericBuilding({
     name, w, d, floors, gfh, fh: 3.1, wallMat: r.chance(0.65) ? 'brick' : 'stucco', wallColor: r.pick([...BRICKS, ...STUCCO]), lintel: '#d9d2c3', trimColor: '#e5ded0',
-    ground: 'storefront', shops: shopSpecs,
-    doors: [...shopSpecs.map((s) => ({ side: 'front', u: (s.u0 + s.u1) / 2 + (s.doorOffset ?? 0), w: 1.8, h: 2.6, kind: 'double', style: 'glass', label: s.name, interactive: !!s.interior })),
+    ground: 'storefront', shops: shopSpecs, clearGlass: true,
+    doors: [...shopSpecs.map((s) => ({ side: 'front', u: (s.u0 + s.u1) / 2 + (s.doorOffset ?? 0), w: 1.8, h: 2.6, kind: 'double', style: 'glass', label: s.name, interactive: s.interior !== false })),
       { side: 'back', u: 0, w: 1.0, locked: true, keyId: 'key_service' }],
     balconies: r.chance(0.4) ? (f, i) => i % 3 === 1 : null, fireEscape: r.chance(0.5) ? { side: 'back', u: 0 } : null, waterTank: r.chance(0.3),
     module: 3.0,
@@ -155,7 +157,7 @@ export function mixedUse(M, atlas, seed, { shops, floors = 3, w = 22, d = 16, na
 export function convenienceStore(M, atlas, seed, { name = 'QuikStop 24/7' } = {}) {
   const w = 16, d = 12;
   const res = genericBuilding({
-    name, w, d, floors: 1, gfh: 4.4, wallMat: 'stucco', wallColor: '#e9e4d8', trimColor: '#c8342a', ground: 'storefront', bandColor: '#c8342a',
+    name, w, d, floors: 1, gfh: 4.4, wallMat: 'stucco', wallColor: '#e9e4d8', trimColor: '#c8342a', ground: 'storefront', bandColor: '#c8342a', clearGlass: true,
     shops: [{ u0: -w / 2 + 0.2, u1: w / 2 - 0.2, name, style: { bg: '#c8342a', fg: '#ffffff', accent: '#ffd23f' } }],
     doors: [{ side: 'front', u: -2.5, w: 1.8, h: 2.6, kind: 'double', style: 'glass', label: name }, { side: 'back', u: 4, locked: true, keyId: 'key_service' }],
     cornice: false, parapet: 1.2, bulkhead: false,
@@ -205,7 +207,7 @@ export function hotel(M, atlas, seed, { name = 'The Harborview Hotel', floors = 
 export function gasStation(M, atlas, seed, { name = 'Horizon Fuel' } = {}) {
   const r = rng(seed);
   const res = genericBuilding({
-    name, w: 12, d: 9, floors: 1, gfh: 3.8, wallMat: 'stucco', wallColor: '#f2efe8', ground: 'storefront', bandColor: '#1f6fb2', cornice: false, parapet: 0.8, bulkhead: false,
+    name, w: 12, d: 9, floors: 1, gfh: 3.8, wallMat: 'stucco', wallColor: '#f2efe8', ground: 'storefront', bandColor: '#1f6fb2', cornice: false, parapet: 0.8, bulkhead: false, clearGlass: true,
     shops: [{ u0: -5.8, u1: 5.8, name: name.toUpperCase() + ' MART', style: { bg: '#1f6fb2', fg: '#fff', accent: '#ffb000' } }],
     doors: [{ side: 'front', u: 3, w: 1.8, h: 2.5, kind: 'double', style: 'glass' }],
     extra(B, { atlas: A }) {
@@ -230,7 +232,7 @@ export function gasStation(M, atlas, seed, { name = 'Horizon Fuel' } = {}) {
 export function mall(M, atlas, seed, { name = 'Harbor Heights Mall' } = {}) {
   const w = 70, d = 44;
   const res = genericBuilding({
-    name, w, d, floors: 2, gfh: 6, fh: 5.5, wallMat: 'concrete', wallColor: '#e2ddd2', trimColor: '#f2eee6', ground: 'storefront', bandColor: '#333a44',
+    name, w, d, floors: 2, gfh: 6, fh: 5.5, wallMat: 'concrete', wallColor: '#e2ddd2', trimColor: '#f2eee6', ground: 'storefront', bandColor: '#333a44', clearGlass: true,
     shops: [
       { u0: -34, u1: -18, name: 'THREADLINE', style: { bg: '#1c1c1c', fg: '#fff' } },
       { u0: -8, u1: 8, name: name.toUpperCase(), style: { bg: '#2a3a5a', fg: '#fff', accent: '#f2a33a' } },
@@ -408,14 +410,17 @@ export function officeLowrise(M, atlas, seed, { name = 'Pier Point Offices', flo
 export function officeTower(M, atlas, seed, { name = 'Meridian Tower', floors = 18, w = 28, d = 26 } = {}) {
   const r = rng(seed), podiumH = 9, fh = 3.8, H = podiumH + floors * fh, tint = r.pick(['#5d7f9a', '#6a8a86', '#4f6a86', '#7a8c9c']);
   const res = genericBuilding({
-    name, w: w + 6, d: d + 6, floors: 1, gfh: podiumH, wallMat: 'stone', wallColor: '#cfc9bd', ground: 'storefront', frame: '#1f2226', glass: '#7f98ab', bandColor: '#1f2226', parapet: 0.4, bulkhead: false, cornice: false,
+    name, w: w + 6, d: d + 6, floors: 1, gfh: podiumH, wallMat: 'stone', wallColor: '#cfc9bd', ground: 'storefront', frame: '#1f2226', glass: '#7f98ab', bandColor: '#1f2226', clearGlass: true, parapet: 0.4, bulkhead: false, cornice: false,
     shops: [{ u0: -(w + 6) / 2 + 0.5, u1: (w + 6) / 2 - 0.5, name: name.toUpperCase(), style: { bg: '#1f2226', fg: '#d8dde2' } }],
     doors: [{ side: 'front', u: -3, w: 2.4, h: 3.2, kind: 'double', style: 'glass', label: name }],
     blankSides: ['left', 'right', 'back'],
     extra(B) {
       // curtain-wall shaft: glass core + mullion/spandrel grid + crown (few triangles)
       const y0 = podiumH + 0.6;
-      B.box('glass', 0, y0 + (H - podiumH) / 2, 0, w, H - podiumH, d, tint, { collide: true });
+      B.box('glass', 0, y0 + (H - podiumH) / 2, 0, w, H - podiumH, d, tint);
+      const sh = (H - podiumH) / 2, sy = y0 + sh;
+      B.collider(0, sy, d / 2, w / 2, sh, 0.15); B.collider(0, sy, -d / 2, w / 2, sh, 0.15); B.collider(w / 2, sy, 0, 0.15, sh, d / 2); B.collider(-w / 2, sy, 0, 0.15, sh, d / 2);
+      B.collider(0, H + 0.6, 0, w / 2, 0.2, d / 2);
       for (let x = -w / 2; x <= w / 2 + 0.01; x += 1.75) { B.box('frame', x, y0 + (H - podiumH) / 2, d / 2 + 0.03, 0.1, H - podiumH, 0.12, '#2a2e33'); B.box('frame', x, y0 + (H - podiumH) / 2, -d / 2 - 0.03, 0.1, H - podiumH, 0.12, '#2a2e33'); }
       for (let z = -d / 2; z <= d / 2 + 0.01; z += 1.75) { B.box('frame', w / 2 + 0.03, y0 + (H - podiumH) / 2, z, 0.12, H - podiumH, 0.1, '#2a2e33'); B.box('frame', -w / 2 - 0.03, y0 + (H - podiumH) / 2, z, 0.12, H - podiumH, 0.1, '#2a2e33'); }
       for (let f = 0; f <= floors; f++) { const y = y0 + f * fh; B.box('frame', 0, y, 0, w + 0.2, 0.35, d + 0.2, '#343a40'); }
@@ -424,7 +429,7 @@ export function officeTower(M, atlas, seed, { name = 'Meridian Tower', floors = 
     },
   }, M, atlas, seed);
   res.height = H;
-  return out(res, { family: 'officeTower', category: 'business', name, interior: 'officeLobby', floors: floors + 1 });
+  return out(res, { family: 'officeTower', category: 'business', name, interior: 'officeLobby', floors: floors + 1, tw: w, td: d, officeY: podiumH + 0.6 + 3 * fh + 0.175 });
 }
 
 export function warehouse(M, atlas, seed, { name = 'Dockside Logistics', w = 40, d = 26 } = {}) {
@@ -467,7 +472,7 @@ export function workshop(M, atlas, seed, { name = "Rusty's Garage" } = {}) {
 
 export function gym(M, atlas, seed, { name = 'IronWorks Gym' } = {}) {
   const res = genericBuilding({
-    name, w: 22, d: 18, floors: 1, gfh: 6, wallMat: 'concrete', wallColor: '#3b3f45', ground: 'storefront', bandColor: '#f2c230', cornice: false, parapet: 0.8, bulkhead: false,
+    name, w: 22, d: 18, floors: 1, gfh: 6, wallMat: 'concrete', wallColor: '#3b3f45', ground: 'storefront', bandColor: '#f2c230', clearGlass: true, cornice: false, parapet: 0.8, bulkhead: false,
     shops: [{ u0: -10.8, u1: 10.8, name: name.toUpperCase(), style: { bg: '#111', fg: '#f2c230' } }],
     doors: [{ side: 'front', u: -6, w: 1.8, h: 2.6, kind: 'double', style: 'glass' }],
   }, M, atlas, seed);

@@ -44,22 +44,17 @@ function windowInsert(B, S, o, st) {
   sideBox(B, S, 'trim', u, y0 - 0.04, w + 0.16, 0.08, 0.2, T / 2 + 0.04, st.sill || '#cfc8bb');
   if (st.lintel) sideBox(B, S, 'trim', u, y0 + h + 0.1, w + 0.24, 0.2, 0.06, T / 2 + 0.03, st.lintel);
   if (st.shutters) for (const s of [-1, 1]) sideBox(B, S, 'wood', u + s * (w / 2 + 0.28), yc, 0.5, h, 0.05, T / 2 + 0.03, st.shutters);
-  // glass is solid for collision (thin slab across the opening)
-  const c = S.half - T / 2, x = S.n[0] * c + S.u[0] * u, z = S.n[2] * c + S.u[2] * u;
-  B.collider(x, yc, z, Math.abs(S.u[0]) > 0.5 ? w / 2 : T / 2, h / 2, Math.abs(S.u[0]) > 0.5 ? T / 2 : w / 2);
 }
 
 function storefrontInsert(B, S, o, st) {
   const u = (o.u0 + o.u1) / 2, w = o.u1 - o.u0, h = o.y1 - o.y0, y0 = o.y0;
   const gOff = T / 2 - 0.1, fr = st.frame || '#2b2e33';
   sideBox(B, S, 'trim', u, y0 + 0.25, w, 0.5, 0.2, 0, st.kick || '#3a3d42');             // kick plate
-  sideBox(B, S, 'glass', u, y0 + 0.5 + (h - 0.5) / 2, w, h - 0.5, 0.03, gOff, st.glass || '#93aabb');
+  sideBox(B, S, st.clearGlass ? 'glassClear' : 'glass', u, y0 + 0.5 + (h - 0.5) / 2, w, h - 0.5, 0.03, gOff, st.clearGlass ? '#ffffff' : st.glass || '#93aabb');
   const n = Math.max(1, Math.round(w / 1.6));
   for (let i = 0; i <= n; i++) sideBox(B, S, 'frame', o.u0 + (w * i) / n, y0 + h / 2, 0.08, h, 0.12, gOff + 0.03, fr);
   sideBox(B, S, 'frame', u, y0 + h - 0.05, w, 0.1, 0.12, gOff + 0.03, fr);
   sideBox(B, S, 'frame', u, y0 + h * 0.8, w, 0.06, 0.1, gOff + 0.03, fr);
-  const c = S.half - T / 2, x = S.n[0] * c + S.u[0] * u, z = S.n[2] * c + S.u[2] * u;
-  B.collider(x, y0 + h / 2, z, Math.abs(S.u[0]) > 0.5 ? w / 2 : T / 2, h / 2, Math.abs(S.u[0]) > 0.5 ? T / 2 : w / 2);
 }
 
 function doorFrameInsert(B, S, o, st) {
@@ -72,7 +67,7 @@ function doorFrameInsert(B, S, o, st) {
 
 function rollerInsert(B, S, o, st) {
   const u = (o.u0 + o.u1) / 2, w = o.u1 - o.u0, h = o.y1 - o.y0;
-  sideBox(B, S, 'metal', u, o.y0 + h / 2, w, h, 0.06, 0, st.roller || '#8d949b', true);
+  sideBox(B, S, 'metal', u, o.y0 + h / 2, w, h, 0.06, 0, st.roller || '#8d949b');
   for (let y = o.y0 + 0.3; y < o.y1; y += 0.3) sideBox(B, S, 'metal', u, y, w, 0.03, 0.08, 0.02, '#6f757c');
   sideBox(B, S, 'frame', u, o.y1 + 0.12, w + 0.2, 0.24, 0.3, 0.1, '#4a4f55');
 }
@@ -81,8 +76,16 @@ function rollerInsert(B, S, o, st) {
 // openings: [{u0,u1,y0,y1,type}] for one wall side spanning y 0..H. The wall is built in
 // horizontal bands (one per floor, split at `bands`) so openings of different floors and widths
 // never overlap: per band -> piers between openings, plus panels below/above each opening.
-function facade(B, S, mat, color, H, openings, st, bands = [0, H]) {
+function facade(B, S, mat, color, H, openings, st, bands = [0, H], splits = []) {
   const L = S.len;
+  // wall piece from u a..b; split at `splits` so per-unit colours (townhouses) change at party walls
+  const piece = (a, b, y, h) => {
+    const cuts = [a, ...splits.filter((s) => s > a + 1e-3 && s < b - 1e-3), b];
+    for (let i = 0; i < cuts.length - 1; i++) {
+      const m = (cuts[i] + cuts[i + 1]) / 2;
+      sideBox(B, S, mat, m, y, cuts[i + 1] - cuts[i], h, T, 0, typeof color === 'function' ? color(m) : color, false);
+    }
+  };
   const ops = openings.filter((o) => o.u1 > -L / 2 && o.u0 < L / 2);
   const edges = [...new Set([...bands, 0, H].map((v) => +v.toFixed(4)))].filter((v) => v >= 0 && v <= H).sort((a, b) => a - b);
   for (let k = 0; k < edges.length - 1; k++) {
@@ -91,14 +94,21 @@ function facade(B, S, mat, color, H, openings, st, bands = [0, H]) {
     const inBand = ops.filter((o) => o.y0 >= b0 - 1e-3 && o.y1 <= b1 + 1e-3).sort((a, b) => a.u0 - b.u0);
     let cur = -L / 2;
     for (const o of inBand) {
-      if (o.u0 - cur > 0.001) sideBox(B, S, mat, (cur + o.u0) / 2, b0 + bh / 2, o.u0 - cur, bh, T, 0, color, true);
-      const uc = (o.u0 + o.u1) / 2, ow = o.u1 - o.u0;
-      if (o.y0 - b0 > 0.001) sideBox(B, S, mat, uc, (b0 + o.y0) / 2, ow, o.y0 - b0, T, 0, color, true);
-      if (b1 - o.y1 > 0.001) sideBox(B, S, mat, uc, (o.y1 + b1) / 2, ow, b1 - o.y1, T, 0, color, true);
+      if (o.u0 - cur > 0.001) piece(cur, o.u0, b0 + bh / 2, bh);
+      if (o.y0 - b0 > 0.001) piece(o.u0, o.u1, (b0 + o.y0) / 2, o.y0 - b0);
+      if (b1 - o.y1 > 0.001) piece(o.u0, o.u1, (o.y1 + b1) / 2, b1 - o.y1);
       cur = Math.max(cur, o.u1);
     }
-    if (L / 2 - cur > 0.001) sideBox(B, S, mat, (cur + L / 2) / 2, b0 + bh / 2, L / 2 - cur, bh, T, 0, color, true);
+    if (L / 2 - cur > 0.001) piece(cur, L / 2, b0 + bh / 2, bh);
   }
+  // Collision: glazing is solid, so a wall side collapses to full-height segments between
+  // door openings plus a lintel block above each door (a handful of cuboids per side).
+  const doorsHere = ops.filter((o) => o.type === 'door').sort((a, b) => a.u0 - b.u0);
+  const colSeg = (a, b, y0, y1) => { if (b - a < 0.01 || y1 - y0 < 0.01) return; const m = (a + b) / 2, c = S.half - T / 2, alongX = Math.abs(S.u[0]) > 0.5;
+    B.collider(S.n[0] * c + S.u[0] * m, (y0 + y1) / 2, S.n[2] * c + S.u[2] * m, alongX ? (b - a) / 2 : T / 2, (y1 - y0) / 2, alongX ? T / 2 : (b - a) / 2); };
+  let cu = -L / 2;
+  for (const o of doorsHere) { colSeg(cu, o.u0, 0, H); colSeg(o.u0, o.u1, o.y1, H); cu = o.u1; }
+  colSeg(cu, L / 2, 0, H);
   for (const o of ops) {
     if (o.type === 'window') windowInsert(B, S, o, st);
     else if (o.type === 'storefront') storefrontInsert(B, S, o, st);
@@ -124,7 +134,16 @@ function windowGrid(len, floors, { f0 = 0, gfh, fh, winW = 1.3, winH = 1.5, sill
 // ---------------------------------------------------------------- shared trims
 function slabsAndRoof(B, w, d, H, floorsY, st) {
   // interior floor slabs (visible through windows) + roof slab
-  for (const y of floorsY) B.box('concrete', 0, y, 0, w - 2 * T, 0.25, d - 2 * T, '#9c9a95', { collide: false });
+  for (const [k, y] of floorsY.entries()) {
+    const h = k === 0 ? st.stairwell : null, iw = w - 2 * T, id = d - 2 * T;
+    if (!h) { B.box('concrete', 0, y, 0, iw, 0.25, id, '#9c9a95'); continue; }
+    // slab around a stairwell opening {x0,x1,z0,z1}
+    const X0 = -iw / 2, X1 = iw / 2, Z0 = -id / 2, Z1 = id / 2;
+    B.box('concrete', (X0 + h.x0) / 2, y, 0, h.x0 - X0, 0.25, id, '#9c9a95');
+    B.box('concrete', (h.x1 + X1) / 2, y, 0, X1 - h.x1, 0.25, id, '#9c9a95');
+    B.box('concrete', (h.x0 + h.x1) / 2, y, (Z0 + h.z0) / 2, h.x1 - h.x0, 0.25, h.z0 - Z0, '#9c9a95');
+    B.box('concrete', (h.x0 + h.x1) / 2, y, (h.z1 + Z1) / 2, h.x1 - h.x0, 0.25, Z1 - h.z1, '#9c9a95');
+  }
   B.box('concrete', 0, H + 0.15, 0, w, 0.3, d, st.roofColor || '#6f6d68', { collide: true });
 }
 function flatRoofDressing(B, w, d, H, r, st) {
@@ -169,10 +188,11 @@ function balcony(B, S, u, y, w, st) {
   sideBox(B, S, 'concrete', u, y - 0.1, w, 0.2, dep, T / 2 + dep / 2, st.balcony || '#d9d6cf');
   const rail = st.railColor || '#2f3337';
   sideBox(B, S, 'metal', u, y + 1.0, w, 0.05, 0.05, T / 2 + dep - 0.03, rail);
-  for (let k = -w / 2; k <= w / 2 + 0.01; k += 0.14) sideBox(B, S, 'metal', u + k, y + 0.5, 0.025, 1.0, 0.025, T / 2 + dep - 0.03, rail);
+  sideBox(B, S, 'metal', u, y + 0.12, w, 0.04, 0.04, T / 2 + dep - 0.03, rail);
+  for (let k = -w / 2; k <= w / 2 + 0.01; k += 0.3) sideBox(B, S, 'metal', u + k, y + 0.5, 0.025, 1.0, 0.025, T / 2 + dep - 0.03, rail);
   for (const s of [-1, 1]) {
     sideBox(B, S, 'metal', u + s * w / 2, y + 1.0, 0.05, 0.05, dep, T / 2 + dep / 2, rail);
-    for (let k = 0.2; k < dep; k += 0.14) sideBox(B, S, 'metal', u + s * w / 2, y + 0.5, 0.025, 1.0, 0.025, T / 2 + k, rail);
+    for (let k = 0.3; k < dep; k += 0.3) sideBox(B, S, 'metal', u + s * w / 2, y + 0.5, 0.025, 1.0, 0.025, T / 2 + k, rail);
   }
 }
 function fireEscape(B, S, u, floorsY, w = 3.2) {
@@ -218,7 +238,7 @@ export function genericBuilding(spec, M, atlas, seed = 1) {
   const { w, d, floors } = spec, gfh = spec.gfh ?? 3.4, fh = spec.fh ?? 3.1;
   const H = gfh + (floors - 1) * fh;
   const S = sides(w, d);
-  const st = { frame: spec.frame, glass: spec.glass, sill: spec.sill, lintel: spec.lintel, shutters: spec.shutters, transom: spec.transom, doorFrame: spec.doorFrame, roller: spec.roller };
+  const st = { frame: spec.frame, glass: spec.glass, sill: spec.sill, lintel: spec.lintel, shutters: spec.shutters, transom: spec.transom, doorFrame: spec.doorFrame, roller: spec.roller, clearGlass: spec.clearGlass ?? !!spec.interiorKind };
   const mat = spec.wallMat || 'brick', color = spec.wallColor || '#a45a44';
   const doors = [];
   const perSide = { front: [], back: [], left: [], right: [] };
@@ -261,7 +281,10 @@ export function genericBuilding(spec, M, atlas, seed = 1) {
     perSide[name].push(...openings);
   }
   const bands = [0]; for (let f = 1; f < floors; f++) bands.push(gfh + (f - 1) * fh); bands.push(H);
-  for (const name of Object.keys(S)) facade(B, S[name], mat, color, H, perSide[name], st, bands);
+  for (const name of Object.keys(S)) {
+    const cf = spec.wallColorAt ? (u) => spec.wallColorAt(name, u) || color : color;
+    facade(B, S[name], mat, cf, H, perSide[name], st, bands, spec.wallSplits?.[name] || []);
+  }
   // floors, roof, trims
   const floorsY = []; for (let f = 1; f < floors; f++) floorsY.push(gfh + (f - 1) * fh);
   B.box('concrete', 0, 0.06, 0, w - 2 * T, 0.12, d - 2 * T, spec.floorColor || '#8f8c86', { collide: true });
@@ -289,7 +312,7 @@ export function genericBuilding(spec, M, atlas, seed = 1) {
   if (spec.fireEscape) fireEscape(B, S[spec.fireEscape.side || 'right'], spec.fireEscape.u ?? 0, floorsY);
   if (spec.extra) spec.extra(B, { w, d, H, gfh, fh, S, r, atlas, sideBox: (...a) => sideBox(B, ...a) });
   const group = B.build(spec.name);
-  return { group, colliders: B.colliders, doors, height: H, tris: B.tris, footprint: [w, d] };
+  return { group, colliders: B.colliders, doors, height: H, tris: B.tris, footprint: [w, d], gfh, fh };
 }
 function fascia(B, w, d, y, color) {
   B.box('trim', 0, y + 0.08, d / 2 + 0.5, w + 1.0, 0.22, 0.06, color);

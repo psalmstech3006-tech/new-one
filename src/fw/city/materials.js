@@ -42,15 +42,16 @@ export function cityMaterials() {
     normalMap: heightToNormal(brickH, 5),
   });
   const stuccoH = hcanvas(256, (g, s) => noise(g, s, 128, 70));
-  const stucco = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, map: tex(256, (g, s) => noise(g, s, 225, 18)), normalMap: heightToNormal(stuccoH, 1.5) });
+  const stucco = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, map: tex(256, (g, s) => noise(g, s, 205, 18)), normalMap: heightToNormal(stuccoH, 1.5) });
   const sidingH = hcanvas(256, (g, s) => { for (let y = 0; y < s; y += 16) { const gr = g.createLinearGradient(0, y, 0, y + 16); gr.addColorStop(0, '#606060'); gr.addColorStop(1, '#d0d0d0'); g.fillStyle = gr; g.fillRect(0, y, s, 16); } });
-  const siding = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, map: tex(256, (g, s) => { noise(g, s, 232, 8); g.fillStyle = 'rgba(0,0,0,0.12)'; for (let y = 0; y < s; y += 16) g.fillRect(0, y + 14, s, 2); }), normalMap: heightToNormal(sidingH, 3) });
-  const concrete = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, map: tex(256, (g, s) => { noise(g, s, 205, 24); g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(0, 0, s, 2); g.fillRect(0, 0, 2, s); }) });
-  const stone = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, map: tex(256, (g, s) => { noise(g, s, 215, 16); g.strokeStyle = 'rgba(80,70,60,0.35)'; g.lineWidth = 2; for (let y = 0; y < s; y += 64) { g.beginPath(); g.moveTo(0, y); g.lineTo(s, y); g.stroke(); for (let x = (y / 64) % 2 ? 0 : 64; x < s; x += 128) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 64); g.stroke(); } } }) });
+  const siding = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, map: tex(256, (g, s) => { noise(g, s, 212, 8); g.fillStyle = 'rgba(0,0,0,0.16)'; for (let y = 0; y < s; y += 16) g.fillRect(0, y + 14, s, 2); }), normalMap: heightToNormal(sidingH, 3) });
+  const concrete = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, map: tex(256, (g, s) => { noise(g, s, 188, 24); g.fillStyle = 'rgba(0,0,0,0.12)'; g.fillRect(0, 0, s, 2); g.fillRect(0, 0, 2, s); }) });
+  const stone = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, map: tex(256, (g, s) => { noise(g, s, 196, 16); g.strokeStyle = 'rgba(80,70,60,0.35)'; g.lineWidth = 2; for (let y = 0; y < s; y += 64) { g.beginPath(); g.moveTo(0, y); g.lineTo(s, y); g.stroke(); for (let x = (y / 64) % 2 ? 0 : 64; x < s; x += 128) { g.beginPath(); g.moveTo(x, y); g.lineTo(x, y + 64); g.stroke(); } } }) });
   const corrH = hcanvas(128, (g, s) => { for (let x = 0; x < s; x += 16) { const gr = g.createLinearGradient(x, 0, x + 16, 0); gr.addColorStop(0, '#303030'); gr.addColorStop(0.5, '#e0e0e0'); gr.addColorStop(1, '#303030'); g.fillStyle = gr; g.fillRect(x, 0, 16, s); } });
   const metal = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.6, map: tex(128, (g, s) => noise(g, s, 210, 14)), normalMap: heightToNormal(corrH, 4) });
   const shingle = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, map: tex(256, (g, s) => { g.fillStyle = '#888'; g.fillRect(0, 0, s, s); for (let y = 0; y < s; y += 16) for (let x = (y / 16) % 2 ? -12 : 0; x < s; x += 24) { const v = rnd(100, 170); g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(x + 1, y + 1, 22, 14); } }) });
   const glass = new THREE.MeshPhysicalMaterial({ vertexColors: true, color: '#9fb4c6', roughness: 0.06, metalness: 0.9, clearcoat: 1, emissive: '#ffcf8a', emissiveIntensity: 0 });
+  const glassClear = new THREE.MeshPhysicalMaterial({ vertexColors: true, color: '#dfeaf2', roughness: 0.05, metalness: 0, transparent: true, opacity: 0.22, depthWrite: false, envMapIntensity: 1.5 });
   const frame = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.2 });
   const trim = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75 });
   const wood = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, map: tex(256, (g, s) => { noise(g, s, 200, 20); g.strokeStyle = 'rgba(90,60,30,0.25)'; for (let i = 0; i < 40; i++) { g.beginPath(); const y = Math.random() * s; g.moveTo(0, y); g.bezierCurveTo(s * 0.3, y + rnd(-6, 6), s * 0.6, y + rnd(-6, 6), s, y); g.stroke(); } }) });
@@ -67,7 +68,7 @@ export function cityMaterials() {
   const grass = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, map: tex(256, (g, s) => { noise(g, s, 150, 60); for (let i = 0; i < 1500; i++) { g.fillStyle = `rgba(${rnd(30, 90)},${rnd(90, 150)},${rnd(30, 60)},0.5)`; g.fillRect(Math.random() * s, Math.random() * s, 1, 3); } }) });
   const paint = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   const leaves = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true });
-  M = { brick, stucco, siding, concrete, stone, metal, shingle, glass, frame, trim, wood, tile, carpet, fabric, plastic, chrome, light, screen, asphalt, paving, grass, paint, leaves };
+  M = { brick, stucco, siding, concrete, stone, metal, shingle, glass, glassClear, frame, trim, wood, tile, carpet, fabric, plastic, chrome, light, screen, asphalt, paving, grass, paint, leaves };
   M.nightGlow = [glass];
   return M;
 }
