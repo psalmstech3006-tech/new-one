@@ -10,29 +10,24 @@ import { Input } from './input.js';
 import { DevOverlay } from './overlay.js';
 import { Audio } from '../audio.js';
 import { loadTextures } from '../assets.js';
+import { buildHumanoid, LOOKS } from './humanoid.js';
 
 const $ = (id) => document.getElementById(id);
 const status = (t, p) => { $('ldText').textContent = t; if (p != null) $('ldFill').style.width = `${Math.round(p * 100)}%`; };
 
-// Character sources, in priority order. Tripo-generated characters (rigged with
-// `tripo anim rig --spec mixamo`) go in assets/characters/ and replace the placeholder.
-const CHARACTER_URLS = [
-  'assets/characters/player.glb',
-  'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/Soldier.glb', // dev placeholder only
-];
-
+// Characters: a Tripo-generated rig (`tripo anim rig --spec mixamo`) in
+// assets/characters/player.glb is used when present; otherwise the built-in rigged
+// humanoid, so the game never depends on a download to start.
 async function loadCharacter() {
-  const loader = new GLTFLoader();
-  for (const url of CHARACTER_URLS) {
-    if (location.protocol === 'file:' && !url.startsWith('http')) continue;
+  if (location.protocol !== 'file:') {
     try {
-      const gltf = await loader.loadAsync(url);
+      const gltf = await new GLTFLoader().loadAsync('assets/characters/player.glb');
       const box = new THREE.Box3().setFromObject(gltf.scene, true);
       const h = box.max.y - box.min.y;
-      return { scene: gltf.scene, clips: gltf.animations.filter((c) => /idle|walk|run/i.test(c.name)), scale: h > 0 ? 1.78 / h : 1, url };
-    } catch { /* try next */ }
+      return { scene: gltf.scene, clips: gltf.animations.filter((c) => /idle|walk|run/i.test(c.name)), scale: h > 0 ? 1.78 / h : 1, url: 'assets/characters/player.glb' };
+    } catch { /* fall through to the built-in character */ }
   }
-  throw new Error('No character model could be loaded (offline?)');
+  return buildHumanoid(LOOKS[0]);
 }
 
 async function main() {
@@ -53,8 +48,9 @@ async function main() {
 
   const player = new Character(game, charAsset, map.spawns.player, { player: true, facing: Math.PI });
   const vehicles = map.spawns.cars.map(([t, p, h, c]) => new Vehicle(game, t, p, h, c));
+  const npcLooks = LOOKS.slice(1).map((l) => buildHumanoid(l));
   const npcs = map.spawns.peds.slice(0, renderer.tier.peds).map((p, i) => {
-    const n = new Character(game, charAsset, p, { facing: i % 2 ? 0 : Math.PI });
+    const n = new Character(game, npcLooks[i % npcLooks.length], p, { facing: i % 2 ? 0 : Math.PI });
     n.ai = { dir: i % 2 ? 1 : -1, wait: Math.random() * 3, gait: Math.random() < 0.8 ? 'walk' : 'run' };
     return n;
   });
@@ -293,4 +289,8 @@ async function main() {
   frame();
 }
 
-main().catch((e) => { status('Error: ' + e.message); console.error(e); });
+// Surface any startup failure on screen instead of leaving the loading bar hanging.
+const showError = (msg) => { status('Could not start: ' + msg + '  — try another browser (Chrome/Edge) or reload.'); };
+addEventListener('error', (e) => { if (!document.getElementById('loading').hidden) showError(e.message); });
+addEventListener('unhandledrejection', (e) => { if (!document.getElementById('loading').hidden) showError(e.reason?.message || String(e.reason)); });
+main().catch((e) => { showError(e.message); console.error(e); });

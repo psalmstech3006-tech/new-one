@@ -119,7 +119,7 @@ function loadImage(url) {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     // a stalled request must not block loading; fall back after a timeout
-    const timer = setTimeout(() => { img.onload = img.onerror = null; reject(new Error('timeout')); }, 8000);
+    const timer = setTimeout(() => { img.onload = img.onerror = null; reject(new Error('timeout')); }, 4000);
     img.onload = () => { clearTimeout(timer); resolve(img); };
     img.onerror = (e) => { clearTimeout(timer); reject(e); };
     img.src = url;
