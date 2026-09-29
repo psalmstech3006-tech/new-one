@@ -30,6 +30,32 @@ async function loadCharacter() {
   return buildHumanoid(LOOKS[0]);
 }
 
+// Generated vehicle models (processed by tools/process-car.mjs): body LOD0-2 + split wheels.
+// Paths are spelled out so the single-file build can embed them.
+const VEHICLE_FILES = {
+  fw_veh_sedan_meridian: ['assets/vehicles/fw_veh_sedan_meridian_lod0.glb', 'assets/vehicles/fw_veh_sedan_meridian_lod1.glb', 'assets/vehicles/fw_veh_sedan_meridian_lod2.glb'],
+};
+async function loadVehicleModel(name) {
+  const loader = new GLTFLoader();
+  const [g0, g1, g2] = await Promise.all(VEHICLE_FILES[name].map((f) => loader.loadAsync(f)));
+  const body = [g0, g1, g2].map((g) => g.scene.getObjectByName('body'));
+  let mat = null;
+  body[0].traverse((o) => { if (o.isMesh && !mat) mat = o.material; });
+  for (const b of body.slice(1)) b.traverse((o) => { if (o.isMesh) o.material = mat; });
+  const wheels = {};
+  for (const n of ['wheel_lf', 'wheel_rf', 'wheel_lr', 'wheel_rr']) wheels[n] = g0.scene.getObjectByName(n);
+  const meta = g0.scene.userData.freeWorld || {};
+  const box = new THREE.Box3().setFromObject(body[0], true), size = box.getSize(new THREE.Vector3());
+  const lf = wheels.wheel_lf.position, lr = wheels.wheel_lr.position;
+  return {
+    body, wheels,
+    handling: {
+      dims: [size.x, size.y, size.z], wheelR: meta.wheelRadius || lf.y,
+      wheelbase: Math.abs(lf.z - lr.z), track: Math.abs(lf.x - wheels.wheel_rf.position.x),
+    },
+  };
+}
+
 async function main() {
   const tierName = localStorage.getItem('fw-tier') || 'medium';
   $('optTier').value = tierName;
@@ -37,7 +63,10 @@ async function main() {
   await initPhysics();
   const renderer = new Renderer($('view'), tierName);
   const physics = new Physics();
-  const game = { scene: renderer.scene, physics, renderer };
+  const game = { scene: renderer.scene, physics, renderer, models: {} };
+  status('Loading vehicles', 0.1);
+  try { game.models.fw_veh_sedan_meridian = await loadVehicleModel('fw_veh_sedan_meridian'); }
+  catch (e) { console.warn('Generated vehicle unavailable, using built-in body', e); }
   status('Loading materials', 0.15);
   const tex = await loadTextures(() => {});
   status('Building proving ground', 0.35);
@@ -47,7 +76,8 @@ async function main() {
   status('Spawning', 0.8);
 
   const player = new Character(game, charAsset, map.spawns.player, { player: true, facing: Math.PI });
-  const vehicles = map.spawns.cars.map(([t, p, h, c]) => new Vehicle(game, t, p, h, c));
+  // generated sedan when available (falls back to the procedural sedan)
+  const vehicles = map.spawns.cars.map(([t, p, h, c]) => new Vehicle(game, t === 'sedan' && game.models.fw_veh_sedan_meridian ? 'meridian' : t, p, h, c));
   const npcLooks = LOOKS.slice(1).map((l) => buildHumanoid(l));
   const npcs = map.spawns.peds.slice(0, renderer.tier.peds).map((p, i) => {
     const n = new Character(game, npcLooks[i % npcLooks.length], p, { facing: i % 2 ? 0 : Math.PI });

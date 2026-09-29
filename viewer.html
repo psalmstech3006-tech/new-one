@@ -1,0 +1,17 @@
+<!doctype html><html><body style="margin:0;background:#888"><canvas id="c" width="1200" height="700"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+const r = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true }); r.setSize(1200, 700, false);
+r.toneMapping = THREE.ACESFilmicToneMapping; r.outputColorSpace = THREE.SRGBColorSpace;
+const s = new THREE.Scene(); s.background = new THREE.Color('#9aa6b2');
+s.add(new THREE.HemisphereLight('#ffffff', '#555', 1.5)); const d = new THREE.DirectionalLight('#fff', 2.5); d.position.set(3, 5, 4); s.add(d);
+const cam = new THREE.PerspectiveCamera(35, 12 / 7, 0.1, 100); const DIST = Number(new URLSearchParams(location.search).get('dist') || 2.6);
+const g = await new GLTFLoader().loadAsync(new URLSearchParams(location.search).get('f'));
+s.add(g.scene);
+if (new URLSearchParams(location.search).get('test')) g.scene.traverse((o) => { if (o.name.startsWith('wheel_')) { o.rotation.x = 0.8; if (o.name.endsWith('f')) o.rotation.y = 0.45; } });
+const box = new THREE.Box3().setFromObject(g.scene); window.__box = [box.min.toArray(), box.max.toArray()];
+const grid = new THREE.GridHelper(4, 8); grid.position.y = box.min.y; s.add(grid);
+window.view = (az, el = 0.25, dist = DIST) => { cam.position.set(Math.sin(az) * dist * Math.cos(el), Math.sin(el) * dist, Math.cos(az) * dist * Math.cos(el)); const c = box.getCenter(new THREE.Vector3()); cam.position.add(c); cam.lookAt(c); r.render(s, cam); };
+window.ready = true;
+</script></body></html>

@@ -101,7 +101,9 @@ export class CameraRig {
     let want = this.targetDist;
     if (want > 0.05) {
       const back = dir.clone().negate();
-      const toi = this.physics.sphereCast(this.pivot, back, want, 0.22, groups(L.CHAR, L.WORLD | L.VEHICLE), target.exclude);
+      // only world geometry pulls the camera in (like GTA V): cars and props would otherwise
+      // shove the camera into their bodywork and fill the screen
+      const toi = this.physics.sphereCast(this.pivot, back, want, 0.22, groups(L.CHAR, L.WORLD), target.exclude);
       if (toi != null) want = Math.max(0.35, toi - 0.05);
     }
     this.curDist = want < this.curDist ? want : this.curDist + (want - this.curDist) * Math.min(1, dt * 2.5);

@@ -112,7 +112,7 @@ export class Renderer {
       this.gtao.blendIntensity = 0.85;
       this.composer.addPass(this.gtao);
     }
-    if (T.bloom) { this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.35, 0.5, 0.9); this.composer.addPass(this.bloom); }
+    if (T.bloom) { this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), 0.22, 0.4, 2.2); this.composer.addPass(this.bloom); }
     this.composer.addPass(new OutputPass());
     if (T.aa === 'smaa') { this.aa = new SMAAPass(innerWidth, innerHeight); this.composer.addPass(this.aa); }
     else { this.aa = new ShaderPass(FXAAShader); this.composer.addPass(this.aa); }

@@ -20,6 +20,14 @@ export const HANDLING = {
     brake: 38, brakeBias: 0.66, handbrake: 60, steerLock: 0.6, comY: -0.02,
     profile: { hood: 0.8, belt: 0.95, roofF: 0.35, roofR: -1.05, roof: 1.42, trunk: 0.98, ws: 0.95, rear: -1.6 },
   },
+  meridian: {
+    name: 'Meridian', model: 'fw_veh_sedan_meridian', mass: 1380, dims: [1.9, 1.45, 4.55], wheelR: 0.34, wheelW: 0.22, wheelbase: 2.56, track: 1.36,
+    susRest: 0.34, susTravel: 0.24, susStiff: 30, susComp: 2.8, susRelax: 3.8, antiRoll: 1800,
+    gripFront: 1.32, gripRear: 1.38, sideStiff: 1.0, handbrakeGrip: 0.5,
+    drive: 'fwd', torque: 290, redline: 6400, idle: 800, gears: [3.4, 2.0, 1.35, 1.0, 0.8], finalDrive: 3.9, cdA: 0.7,
+    brake: 38, brakeBias: 0.66, handbrake: 60, steerLock: 0.6, comY: -0.02,
+    profile: { hood: 0.8, belt: 0.95, roofF: 0.35, roofR: -1.05, roof: 1.42, trunk: 0.98, ws: 0.95, rear: -1.6 },
+  },
   suv: {
     name: 'Ridgeback', mass: 2100, dims: [1.95, 1.8, 4.8], wheelR: 0.38, wheelW: 0.26, wheelbase: 2.85, track: 1.64,
     susRest: 0.42, susTravel: 0.3, susStiff: 26, susComp: 2.6, susRelax: 3.4, antiRoll: 2400,
@@ -136,7 +144,10 @@ function buildWheel(r, w) {
 export class Vehicle {
   constructor(game, type, pos, heading = 0, color = '#8e1b1b') {
     this.game = game;
-    this.H = HANDLING[type];
+    const model = HANDLING[type].model ? game.models?.[HANDLING[type].model] : null;
+    // generated models define their own wheel layout and footprint
+    this.H = model ? { ...HANDLING[type], ...model.handling } : HANDLING[type];
+    this.model = model;
     this.type = type;
     const H = this.H, phys = game.physics, w = phys.world;
     const [W, Ht, Lh] = H.dims;
@@ -177,12 +188,46 @@ export class Vehicle {
 
     // visuals
     this.mesh = new THREE.Group();
-    this.bodyMesh = buildBody(H, color);
-    this.bodyMesh.position.y = -(H.wheelR + H.susRest * 0.5) + 0.02;
+    if (model) {
+      // LOD body: full-detail near, simplified further away (spec §15/§16)
+      const lod = new THREE.LOD();
+      const near = model.body[0].clone();
+      near.traverse((o) => { if (o.isMesh) { o.geometry = o.geometry.clone(); o.castShadow = o.receiveShadow = true; } }); // own copy so dents stay per-car
+      lod.addLevel(near, 0);
+      model.body.slice(1).forEach((b, i) => { const c = b.clone(); c.traverse((o) => { if (o.isMesh) o.castShadow = true; }); lod.addLevel(c, [22, 60][i]); });
+      // model ground sits at y=0; place it so its axles line up with the suspension at rest
+      const restLen = H.susRest - 9.81 / (4 * H.susStiff);
+      lod.position.y = -0.05 - restLen - H.wheelR;
+      this.bodyMesh = new THREE.Group(); this.bodyMesh.add(lod);
+      this.bodyMesh.userData.deformables = [];
+      near.traverse((o) => { if (o.isMesh) this.bodyMesh.userData.deformables.push(o); });
+      this.lod = lod;
+    } else {
+      this.bodyMesh = buildBody(H, color);
+      this.bodyMesh.position.y = -(H.wheelR + H.susRest * 0.5) + 0.02;
+    }
     this.mesh.add(this.bodyMesh);
-    for (const wh of this.wheels) { wh.mesh = buildWheel(H.wheelR, H.wheelW); this.mesh.add(wh.mesh); }
+    const wheelNames = ['wheel_rf', 'wheel_lf', 'wheel_rr', 'wheel_lr']; // matches the layout order above
+    this.wheels.forEach((wh, i) => {
+      if (model?.wheels[wheelNames[i]]) {
+        // detailed generated wheel near the camera, cheap procedural wheel far away
+        const g = new THREE.Group(), spin = new THREE.Group();
+        const detailed = model.wheels[wheelNames[i]].clone(); detailed.position.set(0, 0, 0);
+        detailed.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+        spin.add(detailed);
+        const simple = buildWheel(H.wheelR, H.wheelW).userData.spin; simple.visible = false; spin.add(simple);
+        g.add(spin); g.userData.spin = spin; g.userData.detailed = detailed; g.userData.simple = simple;
+        wh.mesh = g;
+      } else wh.mesh = buildWheel(H.wheelR, H.wheelW);
+      this.mesh.add(wh.mesh);
+    });
     game.scene.add(this.mesh);
-    for (const m of this.bodyMesh.userData.deformables) m.userData.orig = m.geometry.attributes.position.array.slice();
+    // original positions as real floats (quantised attributes store normalised integers)
+    for (const m of this.bodyMesh.userData.deformables) {
+      const a = m.geometry.attributes.position, o = new Float32Array(a.count * 3);
+      for (let i = 0; i < a.count; i++) { o[i * 3] = a.getX(i); o[i * 3 + 1] = a.getY(i); o[i * 3 + 2] = a.getZ(i); }
+      m.userData.orig = o;
+    }
 
     // state
     this.input = { throttle: 0, brake: 0, steer: 0, handbrake: false };
@@ -287,21 +332,27 @@ export class Vehicle {
     const dmg = magnitude / (this.H.mass * 60);
     if (dmg < 0.05) return;
     this.health -= dmg * 60;
-    const inv = this.bodyMesh.matrixWorld.clone().invert();
-    const lp = worldPoint.clone().applyMatrix4(inv);
-    const ld = worldDir.clone().transformDirection(inv).normalize();
-    const depth = Math.min(0.18, dmg * 0.08), radius = 0.55 + Math.min(0.6, dmg * 0.2);
+    const depthW = Math.min(0.18, dmg * 0.08), radiusW = 0.55 + Math.min(0.6, dmg * 0.2);
     for (const m of this.bodyMesh.userData.deformables) {
+      m.updateMatrixWorld(true);
+      const inv = m.matrixWorld.clone().invert();
+      const lp = worldPoint.clone().applyMatrix4(inv);
+      const ld = worldDir.clone().transformDirection(inv).normalize();
+      const unit = 1 / new THREE.Vector3().setFromMatrixScale(m.matrixWorld).x; // world metres -> mesh units
+      const depth = depthW * unit, radius = radiusW * unit;
+      if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+      const bb = m.geometry.boundingBox, bh = bb.max.y - bb.min.y, bl = bb.max.z - bb.min.z;
       const pos = m.geometry.attributes.position, orig = m.userData.orig;
       for (let i = 0; i < pos.count; i++) {
         const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
         const d = Math.hypot(x - lp.x, y - lp.y, z - lp.z);
         if (d > radius) continue;
-        const cabin = y > this.H.profile.belt - 0.05 && Math.abs(z) < this.H.wheelbase * 0.4 ? 0.25 : 1;
+        // spare the cabin: upper-middle of the body deforms far less
+        const cabin = (y - bb.min.y) / bh > 0.55 && Math.abs(z - (bb.min.z + bb.max.z) / 2) / bl < 0.3 ? 0.25 : 1;
         const k = (1 - d / radius) ** 2 * depth * cabin;
         const nx = x + ld.x * k, ny = y + ld.y * k * 0.5, nz = z + ld.z * k;
         const ox = orig[i * 3], oy = orig[i * 3 + 1], oz = orig[i * 3 + 2];
-        const lim = 0.35;
+        const lim = 0.35 * unit;
         pos.setXYZ(i, ox + THREE.MathUtils.clamp(nx - ox, -lim, lim), oy + THREE.MathUtils.clamp(ny - oy, -lim, lim), oz + THREE.MathUtils.clamp(nz - oz, -lim, lim));
       }
       pos.needsUpdate = true;
@@ -325,6 +376,15 @@ export class Vehicle {
       sw.rv += ((tr - sw.r) * k - sw.rv * d) * dt; sw.r += sw.rv * dt;
       sw.pv += ((tp - sw.p) * k - sw.pv * d) * dt; sw.p += sw.pv * dt;
       this.bodyMesh.rotation.set(sw.p, 0, sw.r);
+    }
+    // detailed generated wheels only near the camera
+    const cam = this.game.renderer?.camera;
+    if (cam && this.model) {
+      const near = cam.position.distanceToSquared(this.mesh.position) < 22 * 22;
+      if (near !== this._nearWheels) {
+        this._nearWheels = near;
+        for (const w of this.wheels) if (w.mesh.userData.detailed) { w.mesh.userData.detailed.visible = near; w.mesh.userData.simple.visible = !near; }
+      }
     }
     const c = this.ctrl;
     this.wheels.forEach((w, i) => {

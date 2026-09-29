@@ -4,3 +4,4 @@ dist
 .claude/skills
 skills-lock.json
 public/assets/characters/player.glb
+assets-src/
