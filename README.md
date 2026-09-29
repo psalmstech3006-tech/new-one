@@ -1,20 +1,21 @@
-# Sundown City
+# Free World
 
-An original open-world crime sandbox for the browser, built with three.js. It's inspired by the genre, but every character, place, and brand is fictional.
+A multiplayer open-world life sim, built on a GTA V-grade foundation: camera, handling, physics and reactions modelled on GTA V's behaviour. All characters, places, brands and art are original. Planning lives in [`docs/GTA_V_REFERENCE_SPEC.md`](docs/GTA_V_REFERENCE_SPEC.md).
 
-- Procedural 9×9-block city: downtown glass towers, brick low-rises, parks, a coastline, streetlights, and a day/night cycle with lit windows
-- Third- and first-person play (V): walk, sprint, jump, punch; pistol, SMG, and shotgun
-- Eight drivable vehicles, including a muscle car, sports car, police interceptor, and fuel tanker, with arcade drift physics, damage, fire, and explosions
-- Traffic AI on lanes, pedestrians who walk, cross streets, and flee
-- A five-star heat system: police chase you, bail out of their cars, shoot, and arrest; break line of sight to lose them
-- HUD with a rotating minimap and GPS, health/armor, stars, weapon/ammo, cash, and speedometer; the pause menu has a full map and stats
-- Four story jobs from Rusty, the garage owner; progress is saved to localStorage
-- Touch controls on mobile
+**Current phase: 2 (foundation).** `index.html` / `free-world.html` is a proving-ground test map:
+- **Physics:** Rapier (WASM), fixed 60 Hz step.
+- **Vehicles:** raycast suspension, torque curve, automatic gearbox, speed-sensitive steering, anti-roll, aero drag, handbrake slides, crash deformation, spring-driven body roll and pitch.
+- **Characters:** kinematic controller with momentum, turn-rate limits and pivots; walk/run/sprint animation blending with stride matching; lean; stagger, ragdoll and get-up.
+- **Camera:** state machine (explore / aim / sprint / vehicle / first person) with critically damped lag, sphere-cast collision, a velocity-following vehicle chase, look-behind, shoulder swap and distance steps.
+- **Rendering:** physical sky with image-based lighting, cascaded shadows, GTAO, bloom, ACES tone mapping, SMAA/FXAA. Very Low → High tiers with dynamic resolution.
+- **Dev overlay (F3):** FPS, frame/CPU/GPU/physics/AI/animation times, draw calls, triangles, textures and VRAM, heap, entity counts.
 
-Key art, loading screens, and surface textures were generated with Higgsfield. `src/assets.js` tries local copies in `public/assets/` first, then the Higgsfield CDN, then procedural textures.
+The character is a **dev placeholder**, loaded at runtime from three.js's public examples. Characters generated with Tripo (`tripo anim rig --spec mixamo`) go in `public/assets/characters/player.glb` and replace it. Tripo needs `TRIPO_API_KEY` set in the environment.
 
 ```
 npm install
-npm run dev      # http://localhost:5173
-npm run build
+npm run dev                  # http://localhost:5173
+node tools/handling-test.mjs # headless vehicle benchmark (0-60, top speed, braking, grip)
 ```
+
+The earlier single-player prototype is kept as `legacy-sundown.html` / `sundown-city.html`.

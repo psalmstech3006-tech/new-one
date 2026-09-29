@@ -1,0 +1,86 @@
+import RAPIER from '@dimforge/rapier3d-compat';
+
+export let R = null;
+
+// Collision layers (membership bits). InteractionGroups = membership << 16 | filter.
+export const L = { WORLD: 1, VEHICLE: 2, CHAR: 4, RAGDOLL: 8, PROP: 16 };
+export const groups = (member, filter) => ((member & 0xffff) << 16) | (filter & 0xffff);
+export const ALL = 0xffff;
+
+export async function initPhysics() {
+  await RAPIER.init();
+  R = RAPIER;
+}
+
+// Fixed-timestep Rapier world. Game code hooks `onFixed` for per-step control
+// (vehicle controllers, character controllers) so behaviour is framerate independent.
+export class Physics {
+  constructor() {
+    this.world = new R.World({ x: 0, y: -9.81, z: 0 });
+    this.world.timestep = 1 / 60;
+    this.events = new R.EventQueue(true);
+    this.acc = 0;
+    this.ms = 0;
+    this.steps = 0;
+    this.fixed = [];
+    this.contactHandlers = [];
+    this.forceHandlers = [];
+    this.handles = new Map(); // collider handle -> owner object
+  }
+
+  onFixed(fn) { this.fixed.push(fn); }
+  own(collider, owner) { this.handles.set(collider.handle, owner); return collider; }
+  owner(handle) { return this.handles.get(handle); }
+
+  update(dt) {
+    const h = this.world.timestep;
+    this.acc += Math.min(dt, 0.1);
+    const t0 = performance.now();
+    this.steps = 0;
+    while (this.acc >= h && this.steps < 5) {
+      for (const f of this.fixed) f(h);
+      this.world.step(this.events);
+      this.events.drainCollisionEvents((a, b, started) => {
+        for (const fn of this.contactHandlers) fn(a, b, started);
+      });
+      this.events.drainContactForceEvents((e) => {
+        for (const fn of this.forceHandlers) fn(e);
+      });
+      this.acc -= h;
+      this.steps++;
+    }
+    this.ms = performance.now() - t0;
+  }
+
+  staticBox(cx, cy, cz, hx, hy, hz, rotY = 0, friction = 0.9) {
+    const body = this.world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(cx, cy, cz)
+      .setRotation({ x: 0, y: Math.sin(rotY / 2), z: 0, w: Math.cos(rotY / 2) }));
+    const col = this.world.createCollider(R.ColliderDesc.cuboid(hx, hy, hz).setFriction(friction)
+      .setCollisionGroups(groups(L.WORLD, ALL)), body);
+    return col;
+  }
+
+  staticTrimesh(geometry, matrix) {
+    const g = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+    g.applyMatrix4(matrix);
+    const pos = g.attributes.position.array;
+    const idx = new Uint32Array(pos.length / 3).map((_, i) => i);
+    const body = this.world.createRigidBody(R.RigidBodyDesc.fixed());
+    return this.world.createCollider(R.ColliderDesc.trimesh(new Float32Array(pos), idx).setFriction(0.9)
+      .setCollisionGroups(groups(L.WORLD, ALL)), body);
+  }
+
+  // First hit of a sphere swept from `from` along `dir` (unit) up to `len`.
+  sphereCast(from, dir, len, radius, filterGroups, exclude) {
+    const shape = new R.Ball(radius);
+    const hit = this.world.castShape(from, { x: 0, y: 0, z: 0, w: 1 }, dir, shape, 0, len, true,
+      undefined, filterGroups, exclude);
+    return hit ? hit.time_of_impact : null;
+  }
+
+  ray(from, dir, len, filterGroups, exclude) {
+    const ray = new R.Ray(from, dir);
+    const hit = this.world.castRay(ray, len, true, undefined, filterGroups, exclude);
+    return hit ? { toi: hit.timeOfImpact ?? hit.toi, collider: hit.collider } : null;
+  }
+}
