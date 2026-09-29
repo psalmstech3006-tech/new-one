@@ -73,8 +73,9 @@ export class Character {
   setModel(asset) {
     if (this.state === 'ragdoll' || this.state === 'getup') return false;
     const prevShadow = this.model ? this.model.children.some((o) => o.castShadow) : true;
-    if (this.model) { this.root.remove(this.model); this.mixer?.stopAllAction(); }
-    this.asset = asset;
+    if (this.model) { this.root.remove(this.model); this.mixer?.stopAllAction(); this.mixer?.uncacheRoot(this.model); this.releaseModel(this.model); }
+    if (this.asset && this.asset.users) this.asset.users--;
+    this.asset = asset; asset.users = (asset.users || 0) + 1;
     this.model = SkeletonUtils.clone(asset.scene);
     this.model.scale.setScalar(asset.scale);
     this.model.traverse((o) => { if (o.isMesh) { o.castShadow = prevShadow; o.receiveShadow = true; o.frustumCulled = false; } });
@@ -90,6 +91,9 @@ export class Character {
     return true;
   }
 
+  // Cloned skeletons own a GPU bone texture; free it when a body is swapped or removed.
+  releaseModel(model) { model.traverse((o) => { if (o.isSkinnedMesh) o.skeleton.dispose(); }); }
+
   // Remove the character from the world (remote players leaving, pooled NPC teardown).
   dispose() {
     const P = this.game.physics, w = P.world;
@@ -97,7 +101,8 @@ export class Character {
     P.disown(this.collider);
     w.removeCharacterController(this.cc);
     w.removeRigidBody(this.body);
-    this.mixer?.stopAllAction(); this.mixer?.uncacheRoot(this.model);
+    this.mixer?.stopAllAction(); this.mixer?.uncacheRoot(this.model); this.releaseModel(this.model);
+    if (this.asset?.users) this.asset.users--;
     this.root.traverse((o) => { if (o.isSprite) { o.material.map?.dispose(); o.material.dispose(); } });
     this.game.scene.remove(this.root);
     this.disposed = true;

@@ -111,6 +111,17 @@ export default async function people(browser, url, R) {
   });
   R.check('shoved NPC ragdolls and gets back up', react && react.rag === 'ragdoll' && (react.after === 'loco' || react.inactive), JSON.stringify(react));
   R.check('bystanders flee from violence', react && react.fleeing >= 1, JSON.stringify(react));
+  // --- long session: tour the city for 6 simulated minutes; resources must stay bounded
+  const soak = await g.ev(() => {
+    const F = __fw, gl = F.renderer.gl, spots = [[-38, -56], [120, 60], [-120, 100], [200, -20], [0, -140], [-150, -10]];
+    const snap = () => { F.renderer.render(); return { geo: gl.info.memory.geometries, tex: gl.info.memory.textures, bodies: F.physics.world.bodies.len(), cols: F.physics.world.colliders.len(), fixed: F.physics.fixed.length, heap: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : 0 }; };
+    const tour = () => { for (const [x, z] of spots) { F.player.body.setTranslation({ x, y: 1.2, z }, true); for (let i = 0; i < 30; i++) F.advance(0.5); } };
+    tour(); const a = snap(); tour(); tour(); const b = snap();
+    return { a, b };
+  });
+  R.check('long session: geometries/textures bounded', soak.b.geo <= soak.a.geo + 20 && soak.b.tex <= soak.a.tex + 5, JSON.stringify(soak));
+  R.check('long session: physics bodies/colliders/callbacks bounded', soak.b.bodies <= soak.a.bodies + 3 && soak.b.cols <= soak.a.cols + 10 && soak.b.fixed === soak.a.fixed, JSON.stringify(soak));
+  R.check('long session: JS heap bounded', !soak.a.heap || soak.b.heap < soak.a.heap * 1.35 + 20, `${soak.a.heap} -> ${soak.b.heap} MB`);
   R.check('no console errors', g.errors.length === 0, g.errors.slice(0, 3).join(' | '));
   await context.close();
 }

@@ -53,7 +53,7 @@ const cache = new Map();
 // Build (and cache by DNA) the skinned body. Returns the same asset shape as the built-in humanoid.
 export function buildAvatar(dna) {
   const key = JSON.stringify(dna);
-  if (cache.has(key)) return cache.get(key);
+  if (cache.has(key)) { const a = cache.get(key); cache.delete(key); cache.set(key, a); return a; } // LRU order
   const D = { ...defaultDNA(), ...dna };
   const fem = D.frame === 'f', b = D.build, mu = D.muscle, old = Math.max(0, (D.age - 45) / 35);
   const sw = (fem ? 0.9 : 1.0) * (1 + mu * 0.08 + b * 0.04), hw = (fem ? 1.08 : 1.0) * (1 + b * 0.1);
@@ -170,9 +170,10 @@ export function buildAvatar(dna) {
   const skeleton = new THREE.Skeleton(list);
   const root = new THREE.Group(); root.add(bones.Hips); root.add(mesh); root.updateMatrixWorld(true);
   mesh.bind(skeleton);
-  const asset = { scene: root, clips: CLIPS, scale: D.height / 1.78, url: 'built-in', dna: D };
+  const asset = { scene: root, clips: CLIPS, scale: D.height / 1.78, url: 'built-in', dna: D, users: 0 };
   cache.set(key, asset);
-  if (cache.size > 64) cache.delete(cache.keys().next().value);
+  // bounded cache: evict (and free GPU memory of) bodies no character is currently wearing
+  if (cache.size > 48) for (const [k, a] of cache) { if (cache.size <= 40) break; if (a.users > 0 || a === asset) continue; cache.delete(k); a.scene.traverse((o) => { if (o.isMesh) o.geometry.dispose(); }); }
   return asset;
 }
 

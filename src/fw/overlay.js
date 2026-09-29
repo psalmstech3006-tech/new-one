@@ -8,7 +8,9 @@ export class DevOverlay {
     this.el.append(this.canvas, this.text);
     document.body.appendChild(this.el);
     this.frames = [];
-    this.visible = true;
+    // developer tool: hidden for players (F3 toggles, ?dev=1 opens it)
+    this.visible = /[?&]dev=1/.test(location.search);
+    this.el.style.display = this.visible ? 'block' : 'none';
     this.t = 0;
   }
   toggle() { this.visible = !this.visible; this.el.style.display = this.visible ? 'block' : 'none'; }
