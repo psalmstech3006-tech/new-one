@@ -5,7 +5,7 @@ import { openGame } from '../lib.mjs';
 
 export default async function camera(browser, url, R) {
   R.suite = 'camera';
-  const g = await openGame(browser, url);
+  const g = await openGame(browser, url + '?server=off');
   const res = await g.ev(async () => {
     const F = __fw, P = F.physics, WG = (4 << 16) | 1;
     const out = { samples: 0, inside: 0, blocked: 0, examples: [] };

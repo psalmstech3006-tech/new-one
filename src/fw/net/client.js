@@ -12,10 +12,21 @@ import { buildAvatar, defaultDNA } from '../people/avatar.js';
 const SEND_HZ = 15, DELAY = 120;
 const TOKEN = 'fw-token', NAME = 'fw-name';
 
-export function serverURL() {
+// Where is the multiplayer backend? (the game never depends on it: null = single-player)
+//   1. ?server=host:port | wss://host/ws | off
+//   2. fw-config.json next to the page: { "server": "wss://backend.example.com/ws" }
+//      (static hosting with a separate backend)
+//   3. the page is served by the game server itself (same-origin /health says fw:true)
+export async function resolveServer() {
   const q = new URLSearchParams(location.search).get('server');
-  if (q) return q.startsWith('ws') ? q : `ws://${q}/ws`;
-  if (location.protocol.startsWith('http') && location.port === '8787') return `ws://${location.host}/ws`;
+  if (q === 'off') return null;
+  if (q) return q.startsWith('ws') ? q : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${q}/ws`;
+  if (!location.protocol.startsWith('http')) return null; // file:// offline build
+  const get = async (u) => { const c = new AbortController(); const t = setTimeout(() => c.abort(), 2500); try { const r = await fetch(u, { signal: c.signal, cache: 'no-store' }); return r.ok ? await r.json() : null; } catch { return null; } finally { clearTimeout(t); } };
+  const cfg = await get('fw-config.json');
+  if (cfg?.server) return cfg.server;
+  const h = await get('health');
+  if (h?.fw) return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
   return null;
 }
 
@@ -61,7 +72,7 @@ export class Net {
         this.connected = true; this.id = m.id; this.name = m.name;
         localStorage.setItem(TOKEN, m.token);
         this.onStatus?.(`online as ${m.name}`); this.onHour?.(m.hour);
-        setInterval(() => this.send({ t: 'ping', c: performance.now() }), 2000);
+        clearInterval(this.pingTimer); this.pingTimer = setInterval(() => this.send({ t: 'ping', c: performance.now() }), 2000);
         break;
       case 'join': this.ensure(m.id, m.name, m.dna); break;
       case 'leave': this.remove(m.id); break;
@@ -100,16 +111,15 @@ export class Net {
 
   remove(id) {
     const r = this.remotes.get(id); if (!r) return;
-    this.game.scene.remove(r.char.root);
-    this.game.physics.world.removeRigidBody(r.char.body);
     if (r.vehicle) this.dropVehicle(r);
+    r.char.dispose();
     this.remotes.delete(id);
+    this.onLeave?.(id);
   }
 
   dropVehicle(r) {
     const v = r.vehicle; r.vehicle = null;
-    this.game.scene.remove(v.mesh); this.game.physics.world.removeRigidBody(v.body);
-    v.dead = true;
+    v.dispose();
   }
 
   bubble(id, text) {
@@ -130,8 +140,8 @@ export class Net {
   update(dt) {
     const now = performance.now();
     // ---- send local state
-    this.sendT -= dt;
-    if (this.connected && this.sendT <= 0) { this.sendT = 1 / SEND_HZ; const s = this.getLocal(); if (s) this.send({ t: 'state', ...s }); }
+    // paced by wall-clock time: the server validates motion against real elapsed time
+    if (this.connected && now - (this.lastSend || 0) >= 1000 / SEND_HZ) { this.lastSend = now; const s = this.getLocal(); if (s) this.send({ t: 'state', ...s }); }
     // ---- interpolate remotes
     const rt = now - DELAY;
     for (const r of this.remotes.values()) {
@@ -161,6 +171,9 @@ export class Net {
       } else {
         if (r.vehicle) this.dropVehicle(r);
         ch.visible = true;
+        // mirror knockdowns: the remote body ragdolls locally from the sender's motion
+        if (c.st === 'ragdoll' && ch.state !== 'ragdoll') { const v = new THREE.Vector3(c.x - a.x, 0.4, c.z - a.z).multiplyScalar(c.t > a.t ? 1000 / (c.t - a.t) : 1); ch.goRagdoll(v.clampLength(0, 8)); }
+        if (ch.state === 'ragdoll') { if (c.st !== 'ragdoll') { ch.getUp(); ch.state = 'loco'; } else { ch.sync(dt); continue; } }
         ch.body.setNextKinematicTranslation({ x, y: y + ch.halfH + ch.radius + ch.skin * 0.9, z });
         ch.facing = a.f + df * k; ch.speed = Math.abs(a.sp + (c.sp - a.sp) * k); ch.grounded = true;
         ch.sync(dt);

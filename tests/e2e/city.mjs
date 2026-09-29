@@ -4,7 +4,7 @@ import { openGame, dist } from '../lib.mjs';
 
 export default async function city(browser, url, R) {
   R.suite = 'city';
-  const g = await openGame(browser, url);
+  const g = await openGame(browser, url + '?server=off');
   const info = await g.ev(() => ({ b: __fw.map.buildings.length, e: __fw.city.enterable.length, d: __fw.city.doors.doors.length }));
   R.check('district built', info.b >= 40 && info.e >= 12, JSON.stringify(info));
 

@@ -90,6 +90,19 @@ export class Character {
     return true;
   }
 
+  // Remove the character from the world (remote players leaving, pooled NPC teardown).
+  dispose() {
+    const P = this.game.physics, w = P.world;
+    if (this.ragdoll) { for (const { body } of Object.values(this.ragdoll.parts)) w.removeRigidBody(body); this.ragdoll = null; }
+    P.disown(this.collider);
+    w.removeCharacterController(this.cc);
+    w.removeRigidBody(this.body);
+    this.mixer?.stopAllAction(); this.mixer?.uncacheRoot(this.model);
+    this.root.traverse((o) => { if (o.isSprite) { o.material.map?.dispose(); o.material.dispose(); } });
+    this.game.scene.remove(this.root);
+    this.disposed = true;
+  }
+
   // Where the camera should look: the ragdoll's hips while ragdolled, else the capsule.
   get focus() {
     if (this.state === 'ragdoll' && this.ragdoll?.parts.hips) { const t = this.ragdoll.parts.hips.body.translation(); return new THREE.Vector3(t.x, t.y - 0.9, t.z); }
@@ -237,6 +250,7 @@ export class Character {
     const spot = phys.freeSpot({ x: hips.x, y: fy + this.halfH + this.radius + 0.06, z: hips.z }, this.halfH, this.radius, groups(L.CHAR, L.WORLD));
     this.body.setTranslation(spot, true);
     this.body.setNextKinematicTranslation(spot);
+    if (Math.hypot(spot.x - hips.x, spot.z - hips.z) > 0.5) this.onTeleport?.(); // tell the server this jump is legitimate
     this.speed = 0; this.push.set(0, 0, 0); this.velY = 0;
     this.state = 'getup';
     this.getupT = 0;

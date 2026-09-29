@@ -202,6 +202,7 @@ export class Population {
     c.state = 'loco'; c.speed = 0; c.health = 100;
     c.body.setTranslation({ x: L.pos.x, y: LOT_Y + c.halfH + c.radius + 0.1, z: L.pos.y }, true);
     c.resident = R; R.char = c;
+    if (L.leg && L.dist < 3) this.openDoorNear(c.position);
     c.ai = { leg: L.leg, i: L.leg ? Math.max(1, L.leg.cum.findIndex((v) => v > L.dist)) : 0, idle: !!L.idle, wait: 0, gait: 'walk', flee: 0, look: 0, idleYaw: Math.random() * 6.28 };
     if (c.ai.i < 0) c.ai.i = L.leg ? L.leg.pts.length - 1 : 0;
   }
@@ -211,6 +212,12 @@ export class Population {
     if (c.resident) c.resident.char = null;
     c.resident = null; c.inactive = true; c.visible = false; c.root.visible = false; c.collider.setEnabled(false);
     c.body.setTranslation({ x: 0, y: -200, z: 0 }, true);
+  }
+
+  // NPCs use real doors: the door they walk into / out of swings open (it auto-closes later)
+  openDoorNear(p) {
+    const d = this.doors?.nearest(p, 2.6);
+    if (d && !d.locked && d.target === 0) this.doors.use(d, p, new Set());
   }
 
   panic(pos, radius = 15, t = 8) {
@@ -231,7 +238,7 @@ export class Population {
       } else if (ai.leg) {
         const tgt = ai.leg.pts[Math.min(ai.i, ai.leg.pts.length - 1)];
         const to = new THREE.Vector3(tgt.x - p.x, 0, tgt.y - p.z);
-        if (to.length() < 0.9) { ai.i++; if (ai.i >= ai.leg.pts.length) { ai.leg = null; c.arrived = !c.resident?.loc?.idle; } }
+        if (to.length() < 0.9) { ai.i++; if (ai.i >= ai.leg.pts.length) { ai.leg = null; c.arrived = !c.resident?.loc?.idle; if (c.arrived) this.openDoorNear(p); } }
         else dir.copy(to.normalize());
         gait = 'walk';
       } else if (ai.idle && (ai.wait -= dt) < 0) {

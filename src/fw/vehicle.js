@@ -271,7 +271,7 @@ export class Vehicle {
     this.speed = 0;
     this.shiftT = 0;
     this.skid = 0;
-    game.physics.onFixed((dt) => this.fixedUpdate(dt));
+    this.offFixed = game.physics.onFixed((dt) => this.fixedUpdate(dt));
   }
 
   get position() { const t = this.body.translation(); return new THREE.Vector3(t.x, t.y, t.z); }
@@ -279,6 +279,18 @@ export class Vehicle {
   get forward() { return new THREE.Vector3(0, 0, 1).applyQuaternion(this.quaternion); }
   get right() { return new THREE.Vector3(-1, 0, 0).applyQuaternion(this.quaternion); }
   get velocity() { const v = this.body.linvel(); return new THREE.Vector3(v.x, v.y, v.z); }
+
+  // Remove everything this vehicle registered (network ghosts come and go).
+  dispose() {
+    const P = this.game.physics, w = P.world;
+    this.offFixed?.();
+    P.disown(this.collider);
+    if (this.ctrl) w.removeVehicleController(this.ctrl);
+    w.removeRigidBody(this.body);
+    this.game.scene.remove(this.mesh);
+    for (const m of this.bodyMesh?.userData.deformables || []) m.geometry.dispose(); // per-car clones (dents)
+    this.disposed = true;
+  }
 
   // Remote (network) vehicles are driven by snapshots: kinematic body, no local simulation.
   setRemote() { this.remote = true; this.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true); }

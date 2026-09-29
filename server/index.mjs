@@ -37,7 +37,7 @@ const worldHour = () => (clockAt0 + ((Date.now() - startedAt) / 1000) * (24 / DA
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.wasm': 'application/wasm' };
 const server = http.createServer((req, res) => {
   const url = decodeURIComponent((req.url || '/').split('?')[0]);
-  if (url === '/health') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true, players: players.size, hour: worldHour() })); return; }
+  if (url === '/health') { res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ ok: true, fw: true, players: players.size, hour: worldHour() })); return; }
   let file = path.normalize(path.join(STATIC, url === '/' ? 'index.html' : url));
   if (!file.startsWith(STATIC)) { res.writeHead(403); res.end(); return; }
   fs.readFile(file, (err, buf) => {

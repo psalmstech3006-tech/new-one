@@ -28,7 +28,8 @@ export class Physics {
     this.handles = new Map(); // collider handle -> owner object
   }
 
-  onFixed(fn) { this.fixed.push(fn); }
+  onFixed(fn) { this.fixed.push(fn); return () => { this.fixed = this.fixed.filter((f) => f !== fn); }; }
+  disown(collider) { if (collider) this.handles.delete(collider.handle); }
   own(collider, owner) { this.handles.set(collider.handle, owner); return collider; }
   owner(handle) { return this.handles.get(handle); }
 
