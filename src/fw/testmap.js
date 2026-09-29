@@ -149,11 +149,11 @@ export class TestMap {
     // dynamic props
     for (let i = 0; i < 12; i++) this.addProp('cone', new THREE.Vector3(-3 + (i % 2) * 6, 0, -70 + i * 6));
     for (let i = 0; i < 8; i++) this.addProp('cone', new THREE.Vector3(-90 + Math.cos(i) * 28.5, 0, 40 + Math.sin(i) * 28.5));
-    for (let i = 0; i < 6; i++) this.addProp('bin', new THREE.Vector3(24.8, 0.15, -30 + i * 9));
     for (let y = 0; y < 3; y++) for (let x = 0; x < 3 - y; x++) this.addProp('crate', new THREE.Vector3(30 + x * 1.05 + y * 0.5, y * 1.0 + 0.5, 40));
     for (let i = 0; i < 5; i++) this.addProp('barrel', new THREE.Vector3(-20 + i * 1.2, 0.45, 40));
 
     this.spawns.cars = [
+      ['patrol', new THREE.Vector3(20.5, 0, 10), Math.PI, null],
       ['coupe', new THREE.Vector3(2.5, 0, -80), 0, '#c7c2b3'],
       ['sedan', new THREE.Vector3(-2.5, 0, -80), 0, '#1f3f66'],
       ['suv', new THREE.Vector3(12, 0, -20), Math.PI / 2, '#2b2b2b'],
@@ -228,9 +228,47 @@ export class TestMap {
     this.props.push({ mesh, body, offsetY: oy, kind });
   }
 
+  // Generated prop models (tools/process-prop.mjs): box collider from the model's size.
+  // static props stay put (hydrant, traffic light, barrier); dynamic ones can be knocked around.
+  addModelProp(model, pos, rotY = 0, { mass = 0, fit = 0.9 } = {}) {
+    if (!model) return null;
+    const w = this.game.physics.world;
+    const mesh = model.scene.clone();
+    mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    const [sx, sy, sz] = model.size;
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotY);
+    const desc = mass > 0 ? R.RigidBodyDesc.dynamic().setCanSleep(true).setAngularDamping(0.4) : R.RigidBodyDesc.fixed();
+    const body = w.createRigidBody(desc.setTranslation(pos.x, pos.y + sy / 2, pos.z).setRotation(q));
+    const col = R.ColliderDesc.cuboid((sx * fit) / 2, sy / 2, (sz * fit) / 2).setFriction(0.7).setRestitution(0.1)
+      .setCollisionGroups(groups(mass > 0 ? L.PROP : L.WORLD, ALL));
+    if (mass > 0) col.setMass(mass);
+    w.createCollider(col, body);
+    const g = new THREE.Group(); g.add(mesh); this.game.scene.add(g);
+    const prop = { mesh: g, body, offsetY: -sy / 2, kind: 'model', dirty: true };
+    this.props.push(prop);
+    // static props never move: place once
+    const t = body.translation(); g.position.set(t.x, t.y - sy / 2, t.z); g.quaternion.copy(q);
+    if (mass === 0) prop.static = true;
+    return prop;
+  }
+
+  // Dress the street block with generated props (spec §8 density targets).
+  placeModelProps(models) {
+    if (!models) return;
+    const P = (x, y, z) => new THREE.Vector3(x, y, z);
+    for (let z = -40; z <= 40; z += 20) this.addModelProp(models.bench, P(28.2, 0.15, z + 5), -Math.PI / 2, { mass: 60 });
+    for (const z of [-33, -3, 27]) this.addModelProp(models.hydrant, P(23.9, 0.15, z));
+    for (let z = -44; z <= 44; z += 22) this.addModelProp(models.litterbin, P(24.4, 0.15, z + 11), 0, { mass: 25 });
+    this.addModelProp(models.dumpster, P(44, 0, -57), Math.PI / 2, { mass: 700 });
+    this.addModelProp(models.dumpster, P(44, 0, -53), Math.PI / 2, { mass: 700 });
+    for (let i = 0; i < 5; i++) this.addModelProp(models.barrier, P(-9 + i * 3.1, 0, 98), 0, { mass: 900 });
+    this.addModelProp(models.trafficlight, P(23.4, 0.15, -48.5), Math.PI);
+    this.addModelProp(models.trafficlight, P(23.4, 0.15, 48.5), 0);
+  }
+
   update(night) {
     for (const p of this.props) {
-      if (p.body.isSleeping() && !p.dirty) continue;
+      if (p.static || (p.body.isSleeping() && !p.dirty)) continue;
       const t = p.body.translation(), r = p.body.rotation();
       p.mesh.quaternion.set(r.x, r.y, r.z, r.w);
       p.mesh.position.set(t.x, t.y, t.z).add(new THREE.Vector3(0, p.offsetY, 0).applyQuaternion(p.mesh.quaternion));

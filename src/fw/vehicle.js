@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { R, L, groups, ALL } from './physics.js';
+import { DecalGeometry } from 'three/examples/jsm/geometries/DecalGeometry.js';
 
 // Handling data, one row per model. Values are Free World's own; the concepts
 // (traction, suspension, anti-roll, brake bias, drive bias) follow spec §5.
@@ -26,6 +27,30 @@ export const HANDLING = {
     gripFront: 1.32, gripRear: 1.38, sideStiff: 1.0, handbrakeGrip: 0.5,
     drive: 'fwd', torque: 290, redline: 6400, idle: 800, gears: [3.4, 2.0, 1.35, 1.0, 0.8], finalDrive: 3.9, cdA: 0.7,
     brake: 38, brakeBias: 0.66, handbrake: 60, steerLock: 0.6, comY: -0.02,
+    profile: { hood: 0.8, belt: 0.95, roofF: 0.35, roofR: -1.05, roof: 1.42, trunk: 0.98, ws: 0.95, rear: -1.6 },
+  },
+  vento: {
+    name: 'Vento', model: 'fw_veh_coupe_vento', mass: 1320, dims: [1.9, 1.3, 4.4], wheelR: 0.31, wheelW: 0.25, wheelbase: 2.52, track: 1.36,
+    susRest: 0.3, susTravel: 0.2, susStiff: 40, susComp: 3.3, susRelax: 4.3, antiRoll: 2800,
+    gripFront: 1.48, gripRear: 1.4, sideStiff: 1.0, handbrakeGrip: 0.42,
+    drive: 'rwd', torque: 400, redline: 7400, idle: 900, gears: [3.2, 2.1, 1.5, 1.15, 0.92, 0.76], finalDrive: 3.7, cdA: 0.58,
+    brake: 44, brakeBias: 0.6, handbrake: 72, steerLock: 0.56, comY: -0.1,
+    profile: { hood: 0.78, belt: 0.92, roofF: -0.05, roofR: -0.9, roof: 1.3, trunk: 0.95, ws: 0.6, rear: -1.4 },
+  },
+  ridgeback: {
+    name: 'Ridgeback', model: 'fw_veh_suv_ridgeback', mass: 1950, dims: [1.95, 1.8, 4.7], wheelR: 0.46, wheelW: 0.26, wheelbase: 2.8, track: 1.47,
+    susRest: 0.42, susTravel: 0.3, susStiff: 26, susComp: 2.6, susRelax: 3.4, antiRoll: 2400,
+    gripFront: 1.18, gripRear: 1.18, sideStiff: 0.95, handbrakeGrip: 0.55,
+    drive: 'awd', torque: 480, redline: 6000, idle: 750, gears: [3.6, 2.2, 1.45, 1.0, 0.78], finalDrive: 3.9, cdA: 0.95,
+    brake: 50, brakeBias: 0.64, handbrake: 70, steerLock: 0.56, comY: 0.12,
+    profile: { hood: 1.1, belt: 1.22, roofF: 0.75, roofR: -2.1, roof: 1.78, trunk: 1.7, ws: 1.25, rear: -2.35 },
+  },
+  patrol: {
+    name: 'Patrol', model: 'fw_veh_sedan_meridian', livery: 'police', mass: 1450, dims: [1.9, 1.45, 4.55], wheelR: 0.34, wheelW: 0.22, wheelbase: 2.56, track: 1.36,
+    susRest: 0.33, susTravel: 0.22, susStiff: 34, susComp: 3.0, susRelax: 4.0, antiRoll: 2400,
+    gripFront: 1.42, gripRear: 1.44, sideStiff: 1.0, handbrakeGrip: 0.5,
+    drive: 'rwd', torque: 420, redline: 6600, idle: 800, gears: [3.3, 2.1, 1.45, 1.08, 0.85], finalDrive: 3.7, cdA: 0.68,
+    brake: 46, brakeBias: 0.64, handbrake: 66, steerLock: 0.6, comY: -0.05,
     profile: { hood: 0.8, belt: 0.95, roofF: 0.35, roofR: -1.05, roof: 1.42, trunk: 0.98, ws: 0.95, rear: -1.6 },
   },
   suv: {
@@ -222,6 +247,7 @@ export class Vehicle {
       this.mesh.add(wh.mesh);
     });
     game.scene.add(this.mesh);
+    if (model && H.livery === 'police') this.applyPoliceLivery();
     // original positions as real floats (quantised attributes store normalised integers)
     for (const m of this.bodyMesh.userData.deformables) {
       const a = m.geometry.attributes.position, o = new Float32Array(a.count * 3);
@@ -320,6 +346,44 @@ export class Vehicle {
     this.skid = THREE.MathUtils.clamp((lat - 2.5) / 6, 0, 1) + (inp.handbrake && spd > 5 ? 0.5 : 0);
   }
 
+  // Free World police livery: a side stripe + "POLICE" lettering projected onto the bodywork
+  // as decals (so it follows the panels), plus a roof light bar.
+  applyPoliceLivery() {
+    const near = this.lod.levels[0].object;
+    let body = null; near.traverse((o) => { if (o.isMesh && !body) body = o; });
+    this.mesh.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(near), size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+    const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 256;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#f4f4f0'; g.fillRect(0, 70, 1024, 116);
+    g.fillStyle = '#10131a'; g.fillRect(0, 70, 1024, 10); g.fillRect(0, 176, 1024, 10);
+    g.fillStyle = '#10131a'; g.font = 'bold 92px Arial, Helvetica, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('POLICE', 512, 132);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.05, roughness: 0.4, polygonOffset: true, polygonOffsetFactor: -4, depthWrite: false });
+    for (const side of [1, -1]) {
+      const pos = new THREE.Vector3(c.x + side * size.x / 2, box.min.y + size.y * 0.42, c.z);
+      const orient = new THREE.Euler(0, side * Math.PI / 2, 0);
+      const d = new THREE.Mesh(new DecalGeometry(body, pos, orient, new THREE.Vector3(size.z * 0.62, size.z * 0.155, 0.8)), mat);
+      d.matrixAutoUpdate = false; // decal geometry is already in world space of the spawn pose
+      const inv = this.mesh.matrixWorld.clone().invert(); d.applyMatrix4(inv); d.updateMatrix();
+      this.mesh.add(d);
+    }
+    // light bar
+    const bar = new THREE.Group();
+    const red = new THREE.MeshStandardMaterial({ color: '#600', emissive: '#ff1a1a', emissiveIntensity: 0 });
+    const blue = new THREE.MeshStandardMaterial({ color: '#006', emissive: '#2050ff', emissiveIntensity: 0 });
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.06, 0.26), new THREE.MeshStandardMaterial({ color: '#1a1a1a', roughness: 0.5 }));
+    const l = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.22), red); l.position.set(0.28, 0.07, 0);
+    const r = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.22), blue); r.position.set(-0.28, 0.07, 0);
+    bar.add(base, l, r);
+    const roofY = box.max.y + 0.02 - this.mesh.position.y;
+    bar.position.set(0, roofY, c.z - this.mesh.position.z - size.z * 0.05);
+    this.mesh.add(bar);
+    this.mesh.userData.siren = { red, blue };
+    this.sirenOn = false;
+  }
+
   applyAtWheel(i, f) {
     const hp = this.ctrl.wheelHardPoint(i);
     if (!hp) return;
@@ -376,6 +440,11 @@ export class Vehicle {
       sw.rv += ((tr - sw.r) * k - sw.rv * d) * dt; sw.r += sw.rv * dt;
       sw.pv += ((tp - sw.p) * k - sw.pv * d) * dt; sw.p += sw.pv * dt;
       this.bodyMesh.rotation.set(sw.p, 0, sw.r);
+    }
+    if (this.mesh.userData.siren) {
+      const t = performance.now() / 1000, on = this.sirenOn;
+      this.mesh.userData.siren.red.emissiveIntensity = on && Math.sin(t * 14) > 0 ? 5 : 0;
+      this.mesh.userData.siren.blue.emissiveIntensity = on && Math.sin(t * 14) <= 0 ? 5 : 0;
     }
     // detailed generated wheels only near the camera
     const cam = this.game.renderer?.camera;

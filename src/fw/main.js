@@ -34,7 +34,28 @@ async function loadCharacter() {
 // Paths are spelled out so the single-file build can embed them.
 const VEHICLE_FILES = {
   fw_veh_sedan_meridian: ['assets/vehicles/fw_veh_sedan_meridian_lod0.glb', 'assets/vehicles/fw_veh_sedan_meridian_lod1.glb', 'assets/vehicles/fw_veh_sedan_meridian_lod2.glb'],
+  fw_veh_coupe_vento: ['assets/vehicles/fw_veh_coupe_vento_lod0.glb', 'assets/vehicles/fw_veh_coupe_vento_lod1.glb', 'assets/vehicles/fw_veh_coupe_vento_lod2.glb'],
+  fw_veh_suv_ridgeback: ['assets/vehicles/fw_veh_suv_ridgeback_lod0.glb', 'assets/vehicles/fw_veh_suv_ridgeback_lod1.glb', 'assets/vehicles/fw_veh_suv_ridgeback_lod2.glb'],
 };
+const PROP_FILES = {
+  bench: 'assets/props/fw_prop_bench_park_a.glb',
+  hydrant: 'assets/props/fw_prop_hydrant_a.glb',
+  litterbin: 'assets/props/fw_prop_litterbin_a.glb',
+  dumpster: 'assets/props/fw_prop_dumpster_a.glb',
+  barrier: 'assets/props/fw_prop_barrier_jersey_a.glb',
+  trafficlight: 'assets/props/fw_prop_trafficlight_a.glb',
+};
+async function loadProps() {
+  const loader = new GLTFLoader(), out = {};
+  await Promise.all(Object.entries(PROP_FILES).map(async ([k, f]) => {
+    try {
+      const g = await loader.loadAsync(f);
+      const size = g.scene.userData.freeWorld?.size || new THREE.Box3().setFromObject(g.scene).getSize(new THREE.Vector3()).toArray();
+      out[k] = { scene: g.scene, size };
+    } catch (e) { console.warn('prop unavailable', k, e); }
+  }));
+  return out;
+}
 async function loadVehicleModel(name) {
   const loader = new GLTFLoader();
   const [g0, g1, g2] = await Promise.all(VEHICLE_FILES[name].map((f) => loader.loadAsync(f)));
@@ -65,19 +86,26 @@ async function main() {
   const physics = new Physics();
   const game = { scene: renderer.scene, physics, renderer, models: {} };
   status('Loading vehicles', 0.1);
-  try { game.models.fw_veh_sedan_meridian = await loadVehicleModel('fw_veh_sedan_meridian'); }
-  catch (e) { console.warn('Generated vehicle unavailable, using built-in body', e); }
+  await Promise.all(Object.keys(VEHICLE_FILES).map(async (name) => {
+    try { game.models[name] = await loadVehicleModel(name); }
+    catch (e) { console.warn('Generated vehicle unavailable, using built-in body:', name, e); }
+  }));
+  const props = await loadProps();
   status('Loading materials', 0.15);
   const tex = await loadTextures(() => {});
   status('Building proving ground', 0.35);
   const map = new TestMap(game, tex);
+  map.placeModelProps(props);
   status('Loading character', 0.5);
   const charAsset = await loadCharacter();
   status('Spawning', 0.8);
 
   const player = new Character(game, charAsset, map.spawns.player, { player: true, facing: Math.PI });
   // generated sedan when available (falls back to the procedural sedan)
-  const vehicles = map.spawns.cars.map(([t, p, h, c]) => new Vehicle(game, t === 'sedan' && game.models.fw_veh_sedan_meridian ? 'meridian' : t, p, h, c));
+  // procedural placeholders are swapped for generated models when those loaded
+  const GEN = { sedan: ['meridian', 'fw_veh_sedan_meridian'], coupe: ['vento', 'fw_veh_coupe_vento'], suv: ['ridgeback', 'fw_veh_suv_ridgeback'], patrol: ['patrol', 'fw_veh_sedan_meridian'] };
+  const pick = (t) => (GEN[t] && game.models[GEN[t][1]] ? GEN[t][0] : t === 'patrol' ? 'sedan' : t);
+  const vehicles = map.spawns.cars.map(([t, p, h, c]) => new Vehicle(game, pick(t), p, h, c || '#1f3f66'));
   const npcLooks = LOOKS.slice(1).map((l) => buildHumanoid(l));
   const npcs = map.spawns.peds.slice(0, renderer.tier.peds).map((p, i) => {
     const n = new Character(game, npcLooks[i % npcLooks.length], p, { facing: i % 2 ? 0 : Math.PI });

@@ -92,9 +92,13 @@ async function paintOut(document, prim, P0, T0, I0) {
   const H = maxY - minY, W = maxX - minX, Lz = maxZ - minZ;
   // badge / plate zones at both ends (relative to body size); override with --badges none
   const inBox = (x, y, z, end, bx, y0, y1) => Math.abs(x) < W * bx && y > minY + H * y0 && y < minY + H * y1 && (end > 0 ? z > maxZ - 0.12 * Lz : z < minZ + 0.12 * Lz);
-  const regions = opt('badges', 'both') === 'none' ? [] : [1, -1].flatMap((end) => [
+  // --badges both|front|rear|none selects the ends to clean; --plates keep leaves blank plates alone
+  const frontSign = FRONT === '-z' ? -1 : 1, mode = opt('badges', 'both');
+  const ends = mode === 'both' ? [1, -1] : mode === 'front' ? [frontSign] : mode === 'rear' ? [-frontSign] : [];
+  const keepPlates = opt('plates', 'paint') === 'keep';
+  const regions = ends.flatMap((end) => [
     { name: `badge${end > 0 ? '+z' : '-z'}`, test: (x, y, z) => inBox(x, y, z, end, 0.07, 0.40, 0.62) },
-    { name: `plate${end > 0 ? '+z' : '-z'}`, test: (x, y, z) => inBox(x, y, z, end, 0.13, 0.18, 0.42) },
+    ...(keepPlates ? [] : [{ name: `plate${end > 0 ? '+z' : '-z'}`, test: (x, y, z) => inBox(x, y, z, end, 0.13, 0.18, 0.42) }]),
   ]);
   const decode = async (tex) => { const img = sharp(Buffer.from(tex.getImage())); const { data, info } = await img.ensureAlpha().raw().toBuffer({ resolveWithObject: true }); return { data, info }; };
   const B = await decode(base), Nm = normal ? await decode(normal) : null;
