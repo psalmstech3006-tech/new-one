@@ -297,7 +297,7 @@ async function main() {
   status('Ready — click to play', 1);
   $('loading').classList.add('ready');
   $('loading').onclick = () => { $('loading').hidden = true; started = true; input.enabled = true; audio.init(); $('view').requestPointerLock?.(); };
-  window.__fw = { player, vehicles, npcs, population, cam, physics, renderer, map, city, input, creator, openCreator, get net() { return net; }, chat, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
+  window.__fw = { THREE, player, vehicles, npcs, population, cam, physics, renderer, map, city, input, creator, openCreator, get net() { return net; }, chat, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
     advance(sec) { for (let t = 0; t < sec; t += 1 / 60) { tick(1 / 60, false); input.pressed.clear(); } } };
 
   // ------------------------------------------------------------ frame loop
@@ -384,7 +384,7 @@ async function main() {
     let camDist = 5;
     if (creator.open) { const f = new THREE.Vector3(Math.sin(player.facing), 0, Math.cos(player.facing)), pp = player.position; renderer.camera.position.copy(pp).addScaledVector(f, 2.6).add(new THREE.Vector3(0, 1.35, 0)).addScaledVector(new THREE.Vector3(f.z, 0, -f.x), -0.7); renderer.camera.lookAt(pp.x, pp.y + 1.0, pp.z); }
     else if (window.__fwCamOverride) { const o = window.__fwCamOverride; renderer.camera.position.set(o[0], o[1], o[2]); renderer.camera.lookAt(o[3], o[4], o[5]); }
-    else camDist = cam.update(dt, { pos: player.position, vehicle: current, exclude: current ? current.collider : player.collider, headPos });
+    else camDist = cam.update(dt, { pos: player.focus, vehicle: current, exclude: current ? current.collider : player.collider, headPos });
     player.root.visible = player.visible && !(firstPerson && !current) && camDist > 0.45;
 
     // HUD

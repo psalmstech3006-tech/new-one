@@ -92,6 +92,16 @@ export class CameraRig {
       this.pivot[a] = x; this.pivotV[a] = v;
     }
     if (this.state === 'first') this.pivot.copy(target.headPos || pivotTarget);
+    // The pivot is offset (shoulder) and lags behind, so it can end up inside or beyond a thin
+    // wall. Keep it reachable from a point known to be free (inside the character / vehicle).
+    const WORLD_ONLY = groups(L.CHAR, L.WORLD);
+    const anchor = target.vehicle ? target.vehicle.position.add(new THREE.Vector3(0, 1.2, 0)) : target.pos.clone().add(new THREE.Vector3(0, Math.min(1.45, p.height), 0));
+    const toPivot = this.pivot.clone().sub(anchor), pl = toPivot.length();
+    if (pl > 0.01 && this.state !== 'first') {
+      toPivot.divideScalar(pl);
+      const t = this.physics.sphereCast(anchor, toPivot, pl, 0.18, WORLD_ONLY, target.exclude);
+      if (t != null) { this.pivot.copy(anchor).addScaledVector(toPivot, Math.max(0, t - 0.02)); this.pivotV.set(0, 0, 0); }
+    }
 
     let yaw = this.yaw;
     if (this.lookBehind) yaw += Math.PI;
@@ -103,12 +113,21 @@ export class CameraRig {
       const back = dir.clone().negate();
       // only world geometry pulls the camera in (like GTA V): cars and props would otherwise
       // shove the camera into their bodywork and fill the screen
-      const toi = this.physics.sphereCast(this.pivot, back, want, 0.22, groups(L.CHAR, L.WORLD), target.exclude);
-      if (toi != null) want = Math.max(0.35, toi - 0.05);
+      const toi = this.physics.sphereCast(this.pivot, back, want, 0.2, WORLD_ONLY, target.exclude);
+      if (toi != null) want = Math.max(0.08, toi - 0.06);
     }
     this.curDist = want < this.curDist ? want : this.curDist + (want - this.curDist) * Math.min(1, dt * 2.5);
 
-    const camPos = this.pivot.clone().addScaledVector(dir, -this.curDist);
+    let camPos = this.pivot.clone().addScaledVector(dir, -this.curDist);
+    // hard guarantee: the camera must see the anchor (inside the character) along a clear ray
+    // and must not be inside solid geometry; otherwise pull it in along the anchor ray.
+    const toCam = camPos.clone().sub(anchor), cl = toCam.length();
+    if (cl > 0.02) {
+      toCam.divideScalar(cl);
+      const h = this.physics.ray(anchor, toCam, cl, WORLD_ONLY, target.exclude);
+      if (h) { camPos = anchor.clone().addScaledVector(toCam, Math.max(0, h.toi - 0.12)); this.curDist = Math.min(this.curDist, camPos.distanceTo(this.pivot)); }
+    }
+    if (this.physics.pointInside(camPos, WORLD_ONLY, target.exclude)) { camPos = anchor.clone(); this.curDist = 0; }
     this.cam.position.copy(camPos);
     this.cam.lookAt(camPos.clone().add(dir));
     if (this.shake > 0.001) {

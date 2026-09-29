@@ -90,6 +90,12 @@ export class Character {
     return true;
   }
 
+  // Where the camera should look: the ragdoll's hips while ragdolled, else the capsule.
+  get focus() {
+    if (this.state === 'ragdoll' && this.ragdoll?.parts.hips) { const t = this.ragdoll.parts.hips.body.translation(); return new THREE.Vector3(t.x, t.y - 0.9, t.z); }
+    return this.position;
+  }
+
   get position() { const t = this.body.translation(); return new THREE.Vector3(t.x, t.y - this.halfH - this.radius - this.skin * 0.9, t.z); }
   get head() { return this.position.add(new THREE.Vector3(0, 1.62, 0)); }
   get velocity() { return new THREE.Vector3(Math.sin(this.facing) * this.speed, this.velY, Math.cos(this.facing) * this.speed).add(this.push); }
@@ -224,8 +230,13 @@ export class Character {
     for (const { body } of Object.values(rd.parts)) w.removeRigidBody(body);
     this.ragdoll = null;
     this.collider.setEnabled(true);
-    this.body.setTranslation({ x: hips.x, y: Math.max(hips.y, 0) + this.halfH + this.radius + 0.05, z: hips.z }, true);
-    this.body.setNextKinematicTranslation({ x: hips.x, y: Math.max(hips.y, 0) + this.halfH + this.radius + 0.05, z: hips.z });
+    // stand up where the capsule fits (a body lying against a wall must not end up inside it)
+    const phys = this.game.physics;
+    const floor = phys.ray({ x: hips.x, y: hips.y + 0.5, z: hips.z }, { x: 0, y: -1, z: 0 }, 3, groups(L.CHAR, L.WORLD));
+    const fy = floor ? hips.y + 0.5 - floor.toi : Math.max(hips.y - 0.9, 0);
+    const spot = phys.freeSpot({ x: hips.x, y: fy + this.halfH + this.radius + 0.06, z: hips.z }, this.halfH, this.radius, groups(L.CHAR, L.WORLD));
+    this.body.setTranslation(spot, true);
+    this.body.setNextKinematicTranslation(spot);
     this.speed = 0; this.push.set(0, 0, 0); this.velY = 0;
     this.state = 'getup';
     this.getupT = 0;

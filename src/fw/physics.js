@@ -93,6 +93,25 @@ export class Physics {
     return hit ? hit.time_of_impact : null;
   }
 
+  // Is a point inside any collider of the given groups?
+  pointInside(p, filterGroups, exclude) {
+    let hit = false;
+    this.world.intersectionsWithPoint(p, (c) => { if (!exclude || c.handle !== exclude.handle) { hit = true; return false; } return true; }, undefined, filterGroups);
+    return hit;
+  }
+
+  // Nearest spot around `p` where an upright capsule (halfH, radius; centre at p.y) doesn't overlap WORLD.
+  freeSpot(p, halfH, radius, filterGroups) {
+    const shape = new R.Capsule(halfH, radius), rot = { x: 0, y: 0, z: 0, w: 1 };
+    const free = (q) => { let ok = true; this.world.intersectionsWithShape(q, rot, shape, () => { ok = false; return false; }, undefined, filterGroups); return ok; };
+    if (free(p)) return p;
+    for (const r of [0.25, 0.5, 0.8, 1.2, 1.8, 2.5, 3.5, 4.5, 6]) for (let a = 0; a < 16; a++) {
+      const q = { x: p.x + Math.cos(a * Math.PI / 8) * r, y: p.y, z: p.z + Math.sin(a * Math.PI / 8) * r };
+      if (free(q)) return q;
+    }
+    return p;
+  }
+
   ray(from, dir, len, filterGroups, exclude) {
     const ray = new R.Ray(from, dir);
     const hit = this.world.castRay(ray, len, true, undefined, filterGroups, exclude);
