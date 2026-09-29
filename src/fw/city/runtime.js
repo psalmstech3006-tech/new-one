@@ -158,6 +158,7 @@ export class CityRuntime {
   }
 
   ride(player, b, a, stop) {
+    this.onTeleport?.();
     this.fade.style.opacity = 1;
     setTimeout(() => {
       const w = this.world(b, a.dx, a.stops[stop], a.dz + 0.4);

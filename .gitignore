@@ -5,3 +5,4 @@ dist
 skills-lock.json
 public/assets/characters/player.glb
 assets-src/
+server/data/

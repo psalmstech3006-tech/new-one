@@ -14,6 +14,8 @@ import { Audio } from '../audio.js';
 import { loadTextures } from '../assets.js';
 import { buildAvatar, randomDNA, defaultDNA } from './people/avatar.js';
 import { Creator, loadDNA } from './people/creator.js';
+import { Net, serverURL } from './net/client.js';
+import { Chat } from './net/chat.js';
 
 const $ = (id) => document.getElementById(id);
 const status = (t, p) => { $('ldText').textContent = t; if (p != null) $('ldFill').style.width = `${Math.round(p * 100)}%`; };
@@ -130,6 +132,7 @@ async function main() {
   const creator = new Creator({
     onChange: (asset) => player.setModel(asset),
     onClose: () => { input.enabled = true; $('view').requestPointerLock?.(); },
+    onSave: (dna) => net?.send({ t: 'dna', dna }),
   });
   const openCreator = () => { if (current || player.state !== 'loco') return; creator.show(); input.enabled = false; document.exitPointerLock?.(); };
   const audio = new Audio();
@@ -139,6 +142,22 @@ async function main() {
   let timeOfDay = 17.25, firstPerson = false, walkToggle = false, cullT = 0;
   let moveCmd = { dir: new THREE.Vector3(), gait: 'run', jump: false, aimYaw: null };
   const stats = { cpuMs: 0, physMs: 0, physSteps: 0, renderMs: 0, aiMs: 0, animMs: 0, bodies: 0, colliders: 0, npcs: npcs.length, vehicles: vehicles.length, texMB: null, renderer };
+  // ---- multiplayer (only when a server is configured: ?server=host:port, or served by the game server)
+  let localEmote = null;
+  const url = serverURL();
+  const chat = new Chat({ onSend: (text, shout) => net?.send({ t: 'chat', text, shout }), onOpen: () => { input.enabled = false; }, onClose: () => { input.enabled = true; } });
+  const net = url ? new Net(url, {
+    game, player, dna: player.asset.dna || loadDNA(),
+    getLocal: () => {
+      if (current) { const t = current.position, q = current.quaternion; return { x: t.x, y: t.y, z: t.z, f: Math.atan2(current.forward.x, current.forward.z), sp: current.speed, st: 'drive', v: { k: current.type, c: current.color, q: [q.x, q.y, q.z, q.w] } }; }
+      const p = player.position; return { x: p.x, y: p.y, z: p.z, f: player.facing, sp: player.speed, st: player.state, e: localEmote?.e || '' };
+    },
+    onChat: (m) => chat.add(m.name, m.text, m.shout),
+    onShoved: (m) => { if (!current && player.state === 'loco') { player.knock(new THREE.Vector3(m.vx, 1.2, m.vz)); audio.punch(); } },
+    onStatus: (t) => { stats.net = t; chat.status(t); },
+    onHour: (h) => { if (Math.abs(((h - timeOfDay + 36) % 24) - 12) < 11.9) timeOfDay = h; },
+  }) : null;
+  if (city && net) city.onTeleport = () => net.send({ t: 'respawn' });
 
   // ------------------------------------------------------------ fixed-step control
   physics.onFixed((dt) => {
@@ -260,7 +279,7 @@ async function main() {
   let hadLock = false;
   document.addEventListener('pointerlockchange', () => {
     if (document.pointerLockElement) { hadLock = true; return; }
-    if (hadLock && !paused && started && !window.__fwNoAutoPause && !creator.open) setPaused(true);
+    if (hadLock && !paused && started && !window.__fwNoAutoPause && !creator.open && !chat.isOpen) setPaused(true);
     hadLock = false;
   });
   $('btnResume').onclick = () => setPaused(false);
@@ -273,7 +292,7 @@ async function main() {
   status('Ready — click to play', 1);
   $('loading').classList.add('ready');
   $('loading').onclick = () => { $('loading').hidden = true; started = true; input.enabled = true; audio.init(); $('view').requestPointerLock?.(); };
-  window.__fw = { player, vehicles, npcs, cam, physics, renderer, map, city, input, creator, openCreator, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
+  window.__fw = { player, vehicles, npcs, cam, physics, renderer, map, city, input, creator, openCreator, get net() { return net; }, chat, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
     advance(sec) { for (let t = 0; t < sec; t += 1 / 60) { tick(1 / 60, false); input.pressed.clear(); } } };
 
   // ------------------------------------------------------------ frame loop
@@ -297,6 +316,8 @@ async function main() {
       cam.look(look.x, look.y);
       if (input.hit('F3')) overlay.toggle();
       if (input.hit('KeyP')) openCreator();
+      if (input.hit('KeyY') && net) chat.open();
+      if (input.hit('KeyX') && !current) { localEmote = { e: input.down('ShiftLeft') ? 'cheer' : 'wave', t: 2.5 }; net?.send({ t: 'emote', e: localEmote.e }); }
       if (input.hit('KeyV')) firstPerson = !firstPerson;
       if (input.hit('KeyQ')) cam.swapShoulder();
       if (input.wheel) cam.cycleDistance();
@@ -307,7 +328,9 @@ async function main() {
       if (input.hit('KeyG') && !current) {
         // shove the nearest pedestrian
         const n = npcs.filter((n) => n.state === 'loco').sort((a, b) => a.position.distanceTo(player.position) - b.position.distanceTo(player.position))[0];
-        if (n && n.position.distanceTo(player.position) < 1.8) { const d = n.position.sub(player.position).setY(0).normalize(); n.knock(d.multiplyScalar(input.down('ShiftLeft') ? 5 : 2.2)); player.speed *= 0.5; audio.punch(); }
+        const rp = net?.nearestRemote(player.position);
+        if (rp && (!n || rp.char.position.distanceTo(player.position) < n.position.distanceTo(player.position))) { net.send({ t: 'shove', id: rp.id, hard: input.down('ShiftLeft') }); player.speed *= 0.5; audio.punch(); }
+        else if (n && n.position.distanceTo(player.position) < 1.8) { const d = n.position.sub(player.position).setY(0).normalize(); n.knock(d.multiplyScalar(input.down('ShiftLeft') ? 5 : 2.2)); player.speed *= 0.5; audio.punch(); }
       }
       cam.lookBehind = !!current && input.down('KeyC');
       const a = input.axis();
@@ -334,6 +357,8 @@ async function main() {
     for (const v of vehicles) v.sync(dt);
     if (current) player.body.setNextKinematicTranslation(current.position.add(new THREE.Vector3(0, -0.5, 0)));
     player.sync(dt);
+    if (localEmote) { localEmote.t -= dt; if (net) net.animateEmote(player, localEmote); if (localEmote.t <= 0) localEmote = null; }
+    if (net) { net.update(dt); stats.remote = net.remotes.size; stats.rtt = net.rtt; }
     for (const n of npcs) n.sync(dt);
     stats.animMs = performance.now() - a0;
     map.update(renderer.night || 0);

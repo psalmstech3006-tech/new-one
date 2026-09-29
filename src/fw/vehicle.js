@@ -175,7 +175,7 @@ export class Vehicle {
     // generated models define their own wheel layout and footprint
     this.H = model ? { ...HANDLING[type], ...model.handling } : HANDLING[type];
     this.model = model;
-    this.type = type;
+    this.type = type; this.color = color;
     const H = this.H, phys = game.physics, w = phys.world;
     const [W, Ht, Lh] = H.dims;
 
@@ -280,7 +280,11 @@ export class Vehicle {
   get right() { return new THREE.Vector3(-1, 0, 0).applyQuaternion(this.quaternion); }
   get velocity() { const v = this.body.linvel(); return new THREE.Vector3(v.x, v.y, v.z); }
 
+  // Remote (network) vehicles are driven by snapshots: kinematic body, no local simulation.
+  setRemote() { this.remote = true; this.body.setBodyType(R.RigidBodyType.KinematicPositionBased, true); }
+
   fixedUpdate(dt) {
+    if (this.remote) { this.speed = this.remoteSpeed || 0; return; }
     const H = this.H, c = this.ctrl, inp = this.input;
     const v = this.velocity, fwd = this.forward;
     const vF = v.dot(fwd);

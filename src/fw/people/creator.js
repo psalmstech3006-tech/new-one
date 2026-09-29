@@ -13,8 +13,8 @@ export function loadDNA() {
 export function saveDNA(dna) { try { localStorage.setItem(KEY, JSON.stringify(dna)); } catch { /* storage blocked */ } }
 
 export class Creator {
-  constructor({ onChange, onClose }) {
-    this.onChange = onChange; this.onClose = onClose;
+  constructor({ onChange, onClose, onSave }) {
+    this.onChange = onChange; this.onClose = onClose; this.onSave = onSave;
     this.dna = loadDNA() || defaultDNA();
     const el = (this.el = document.createElement('section'));
     el.id = 'creator'; el.hidden = true;
@@ -32,7 +32,7 @@ export class Creator {
     document.body.appendChild(el);
     el.querySelector('#crRand').onclick = () => { this.dna = { ...randomDNA(Math.floor(Math.random() * 1e9)), acc: this.dna.acc.filter(() => Math.random() < 0.5) }; this.render(); this.changed(); };
     el.querySelector('#crCancel').onclick = () => { this.dna = this.saved; this.changed(); this.close(); };
-    el.querySelector('#crSave').onclick = () => { saveDNA(this.dna); this.saved = this.dna; this.close(); };
+    el.querySelector('#crSave').onclick = () => { saveDNA(this.dna); this.saved = this.dna; this.onSave?.(this.dna); this.close(); };
     // keep game keys from firing while the panel has focus
     el.addEventListener('keydown', (e) => e.stopPropagation());
   }
