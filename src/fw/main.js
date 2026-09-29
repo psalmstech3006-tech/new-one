@@ -16,6 +16,7 @@ import { buildAvatar, randomDNA, defaultDNA } from './people/avatar.js';
 import { Creator, loadDNA } from './people/creator.js';
 import { Net, serverURL } from './net/client.js';
 import { Chat } from './net/chat.js';
+import { Population } from './people/population.js';
 
 const $ = (id) => document.getElementById(id);
 const status = (t, p) => { $('ldText').textContent = t; if (p != null) $('ldFill').style.width = `${Math.round(p * 100)}%`; };
@@ -117,7 +118,9 @@ async function main() {
   const GEN = { sedan: ['meridian', 'fw_veh_sedan_meridian'], coupe: ['vento', 'fw_veh_coupe_vento'], suv: ['ridgeback', 'fw_veh_suv_ridgeback'], patrol: ['patrol', 'fw_veh_sedan_meridian'] };
   const pick = (t) => (GEN[t] && game.models[GEN[t][1]] ? GEN[t][0] : t === 'patrol' ? 'sedan' : t);
   const vehicles = map.spawns.cars.map(([t, p, h, c]) => new Vehicle(game, pick(t), p, h, c || '#1f3f66'));
-  const npcs = map.spawns.peds.slice(0, renderer.tier.peds).map((sp, i) => {
+  // city: scheduled residents with simulation tiers; proving ground: simple patrol walkers
+  const population = city ? new Population(game, map, tierName, { budget: renderer.tier.peds + 4 }) : null;
+  const npcs = population ? population.chars : map.spawns.peds.slice(0, renderer.tier.peds).map((sp, i) => {
     const p = sp.pos || sp;
     const n = new Character(game, buildAvatar(randomDNA(7000 + i, { role: i % 11 === 5 ? 'worker' : 'civilian' })), p, { facing: i % 2 ? 0 : Math.PI });
     n.ai = { dir: sp.dir ?? (i % 2 ? 1 : -1), wait: Math.random() * 3, gait: Math.random() < 0.85 ? 'walk' : 'run' };
@@ -164,7 +167,8 @@ async function main() {
     for (const v of vehicles) v._preVel = v.body.linvel();
     player.fixedUpdate(dt, moveCmd);
     const t0 = performance.now();
-    for (const n of npcs) {
+    if (population) population.fixed(dt, vehicles, player);
+    else for (const n of npcs) {
       if (n.state !== 'loco') continue;
       const ai = n.ai;
       // sidewalk loops around the blocks (city) or a straight patrol (proving ground),
@@ -195,11 +199,12 @@ async function main() {
       if (sp < 1.5) continue;
       const inv = v.quaternion.invert(), vp = v.position, [W, , Lh] = v.H.dims;
       for (const c of [player, ...npcs]) {
-        if (c.state !== 'loco' || (c === player && current)) continue;
+        if (c.state !== 'loco' || c.inactive || (c === player && current)) continue;
         const local = c.position.sub(vp).applyQuaternion(inv);
         if (Math.abs(local.x) < W / 2 + 0.3 && Math.abs(local.z) < Lh / 2 + 0.3 && local.y > -1.2 && local.y < 1.2) {
           const lift = Math.min(4, sp * 0.3);
           c.knock(vel.clone().multiplyScalar(0.85).add(new THREE.Vector3(0, lift, 0)));
+          population?.panic(c.position, 22);
           if (sp > 7) c.hurt(sp * 4, vel.clone().normalize());
           v.body.setLinvel({ x: vel.x * 0.94, y: vel.y, z: vel.z * 0.94 }, true);
           audio.punch();
@@ -292,7 +297,7 @@ async function main() {
   status('Ready — click to play', 1);
   $('loading').classList.add('ready');
   $('loading').onclick = () => { $('loading').hidden = true; started = true; input.enabled = true; audio.init(); $('view').requestPointerLock?.(); };
-  window.__fw = { player, vehicles, npcs, cam, physics, renderer, map, city, input, creator, openCreator, get net() { return net; }, chat, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
+  window.__fw = { player, vehicles, npcs, population, cam, physics, renderer, map, city, input, creator, openCreator, get net() { return net; }, chat, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
     advance(sec) { for (let t = 0; t < sec; t += 1 / 60) { tick(1 / 60, false); input.pressed.clear(); } } };
 
   // ------------------------------------------------------------ frame loop
@@ -327,10 +332,10 @@ async function main() {
       if (input.hit('KeyH') && !current) player.knock(cam.flatForward.multiplyScalar(-5).add(new THREE.Vector3(0, 2, 0)));
       if (input.hit('KeyG') && !current) {
         // shove the nearest pedestrian
-        const n = npcs.filter((n) => n.state === 'loco').sort((a, b) => a.position.distanceTo(player.position) - b.position.distanceTo(player.position))[0];
+        const n = npcs.filter((n) => n.state === 'loco' && !n.inactive).sort((a, b) => a.position.distanceTo(player.position) - b.position.distanceTo(player.position))[0];
         const rp = net?.nearestRemote(player.position);
         if (rp && (!n || rp.char.position.distanceTo(player.position) < n.position.distanceTo(player.position))) { net.send({ t: 'shove', id: rp.id, hard: input.down('ShiftLeft') }); player.speed *= 0.5; audio.punch(); }
-        else if (n && n.position.distanceTo(player.position) < 1.8) { const d = n.position.sub(player.position).setY(0).normalize(); n.knock(d.multiplyScalar(input.down('ShiftLeft') ? 5 : 2.2)); player.speed *= 0.5; audio.punch(); }
+        else if (n && n.position.distanceTo(player.position) < 1.8) { const d = n.position.sub(player.position).setY(0).normalize(); n.knock(d.multiplyScalar(input.down('ShiftLeft') ? 5 : 2.2)); player.speed *= 0.5; audio.punch(); population?.panic(n.position, 14); }
       }
       cam.lookBehind = !!current && input.down('KeyC');
       const a = input.axis();
@@ -359,7 +364,8 @@ async function main() {
     player.sync(dt);
     if (localEmote) { localEmote.t -= dt; if (net) net.animateEmote(player, localEmote); if (localEmote.t <= 0) localEmote = null; }
     if (net) { net.update(dt); stats.remote = net.remotes.size; stats.rtt = net.rtt; }
-    for (const n of npcs) n.sync(dt);
+    for (const n of npcs) if (!n.inactive) n.sync(dt);
+    if (population) { population.update(dt, timeOfDay, current ? current.position : player.position); population.aware(player); stats.npcs = `${population.stats.embodied} embodied / ${population.stats.outdoors} outdoors / ${population.stats.residents} residents`; }
     stats.animMs = performance.now() - a0;
     map.update(renderer.night || 0);
     if (city) { city.update(dt, current ? current.position : player.position); stats.city = city.stats; }
