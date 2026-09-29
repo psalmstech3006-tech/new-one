@@ -36,7 +36,8 @@ export class DevOverlay {
       `bodies ${s.bodies}   colliders ${s.colliders}   NPCs ${s.npcs}   vehicles ${s.vehicles}`,
       `AI ${s.aiMs.toFixed(2)} ms   anim ${s.animMs.toFixed(2)} ms`,
       `render scale ${(s.renderer.dynScale * s.renderer.tier.scale).toFixed(2)}   tier ${s.renderer.tierName}`,
-      `network  offline (single-player test map)`,
+      s.city ? `interiors streamed ${s.city.interiors} (${(s.city.interiorTris / 1000).toFixed(0)}k tris, last build ${s.city.buildMs.toFixed(0)} ms)` : 'interiors n/a (proving ground)',
+      `network  offline (single-player)`,
     ].join('\n');
   }
 }

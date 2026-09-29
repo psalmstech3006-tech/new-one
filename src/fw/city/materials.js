@@ -51,6 +51,8 @@ export function cityMaterials() {
   const metal = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.6, map: tex(128, (g, s) => noise(g, s, 210, 14)), normalMap: heightToNormal(corrH, 4) });
   const shingle = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, map: tex(256, (g, s) => { g.fillStyle = '#888'; g.fillRect(0, 0, s, s); for (let y = 0; y < s; y += 16) for (let x = (y / 16) % 2 ? -12 : 0; x < s; x += 24) { const v = rnd(100, 170); g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(x + 1, y + 1, 22, 14); } }) });
   const glass = new THREE.MeshPhysicalMaterial({ vertexColors: true, color: '#9fb4c6', roughness: 0.06, metalness: 0.9, clearcoat: 1, emissive: '#ffcf8a', emissiveIntensity: 0 });
+  // windows that light up at night (a random share of each facade) — emissive driven by the day cycle
+  const glassLit = glass.clone(); glassLit.emissive = new THREE.Color('#ffc978');
   const glassClear = new THREE.MeshPhysicalMaterial({ vertexColors: true, color: '#dfeaf2', roughness: 0.05, metalness: 0, transparent: true, opacity: 0.22, depthWrite: false, envMapIntensity: 1.5 });
   const frame = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.2 });
   const trim = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75 });
@@ -68,33 +70,40 @@ export function cityMaterials() {
   const grass = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, map: tex(256, (g, s) => { noise(g, s, 150, 60); for (let i = 0; i < 1500; i++) { g.fillStyle = `rgba(${rnd(30, 90)},${rnd(90, 150)},${rnd(30, 60)},0.5)`; g.fillRect(Math.random() * s, Math.random() * s, 1, 3); } }) });
   const paint = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   const leaves = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true });
-  M = { brick, stucco, siding, concrete, stone, metal, shingle, glass, glassClear, frame, trim, wood, tile, carpet, fabric, plastic, chrome, light, screen, asphalt, paving, grass, paint, leaves };
-  M.nightGlow = [glass];
+  M = { brick, stucco, siding, concrete, stone, metal, shingle, glass, glassLit, glassClear, frame, trim, wood, tile, carpet, fabric, plastic, chrome, light, screen, asphalt, paving, grass, paint, leaves };
+  M.nightGlow = [glassLit];
   return M;
 }
 
-// A small shared canvas atlas for all storefront signs (one material, one texture).
+// A shared canvas atlas for signs (one material, one texture). Identical text+style reuses a slot.
 export class SignAtlas {
-  constructor(slots = 64) {
-    this.cols = 4; this.rows = slots / 4; this.slotW = 512; this.slotH = 128;
+  constructor({ cols = 4, rows = 4, slotW = 512, slotH = 128 } = {}) {
+    Object.assign(this, { cols, rows, slotW, slotH });
     this.canvas = document.createElement('canvas');
-    this.canvas.width = this.cols * this.slotW; this.canvas.height = this.rows * this.slotH;
+    this.canvas.width = cols * slotW; this.canvas.height = rows * slotH;
     this.g = this.canvas.getContext('2d');
-    this.next = 0;
+    this.next = 0; this.cache = new Map();
     this.texture = new THREE.CanvasTexture(this.canvas); this.texture.colorSpace = THREE.SRGBColorSpace; this.texture.anisotropy = 8;
     this.material = new THREE.MeshStandardMaterial({ map: this.texture, emissive: '#ffffff', emissiveMap: this.texture, emissiveIntensity: 0.15, roughness: 0.5 });
   }
   // returns UV rect [u0,v0,u1,v1]
   add(text, { bg = '#1d2a3a', fg = '#f4f1e8', accent = null, font = 'bold 72px Arial, Helvetica, sans-serif' } = {}) {
+    const key = [text, bg, fg, accent, font].join('|');
+    if (this.cache.has(key)) return this.cache.get(key);
     const i = this.next++ % (this.cols * this.rows), cx = i % this.cols, cy = Math.floor(i / this.cols);
-    const x = cx * this.slotW, y = cy * this.slotH, g = this.g;
-    g.fillStyle = bg; g.fillRect(x, y, this.slotW, this.slotH);
-    if (accent) { g.fillStyle = accent; g.fillRect(x, y + this.slotH - 14, this.slotW, 14); }
-    g.fillStyle = fg; g.font = font; g.textAlign = 'center'; g.textBaseline = 'middle';
-    let size = 72; while (g.measureText(text).width > this.slotW - 40 && size > 24) { size -= 4; g.font = font.replace(/\d+px/, size + 'px'); }
-    g.fillText(text, x + this.slotW / 2, y + this.slotH / 2 - (accent ? 6 : 0));
+    const W0 = this.slotW, H0 = this.slotH, x = cx * W0, y = cy * H0, g = this.g, k = H0 / 128;
+    g.fillStyle = bg; g.fillRect(x, y, W0, H0);
+    if (accent) { g.fillStyle = accent; g.fillRect(x, y + H0 - 14 * k, W0, 14 * k); }
+    g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle';
+    let size = Math.round((parseInt(font.match(/(\d+)px/)?.[1] || 72, 10)) * k);
+    g.font = font.replace(/\d+px/, size + 'px');
+    while (g.measureText(text).width > W0 - 40 * k && size > 10) { size -= 2; g.font = font.replace(/\d+px/, size + 'px'); }
+    g.fillText(text, x + W0 / 2, y + H0 / 2 - (accent ? 6 * k : 0));
     this.texture.needsUpdate = true;
     const W = this.canvas.width, H = this.canvas.height;
-    return [x / W, 1 - (y + this.slotH) / H, (x + this.slotW) / W, 1 - y / H];
+    const rect = [x / W, 1 - (y + H0) / H, (x + W0) / W, 1 - y / H];
+    this.cache.set(key, rect);
+    return rect;
   }
+  dispose() { this.texture.dispose(); this.material.dispose(); }
 }

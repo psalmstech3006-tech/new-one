@@ -30,6 +30,7 @@
     #vname { font-size: 12px; opacity: .7; letter-spacing: .15em; text-transform: uppercase; }
     #hint { position: absolute; left: 28px; top: 24px; background: rgba(0,0,0,.65); padding: 10px 14px; font-size: 14px; opacity: 0; transition: opacity .2s; border-left: 3px solid var(--accent); }
     #clock { position: absolute; right: 28px; top: 22px; font-size: 16px; opacity: .85; text-shadow: 0 2px 3px #000; }
+    #street { position: absolute; right: 28px; top: 46px; font-size: 13px; letter-spacing: .08em; opacity: .8; text-shadow: 0 2px 3px #000; text-transform: uppercase; }
     #reticle { position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.7); opacity: .8; }
     #pause { position: fixed; inset: 0; z-index: 25; background: rgba(6,8,12,.82); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; }
     #pause .panel { width: min(560px, 92vw); background: rgba(15,17,22,.95); border-top: 3px solid var(--accent); padding: 22px 26px; }
@@ -49,16 +50,17 @@
     <div id="reticle"></div>
     <div id="hint"></div>
     <div id="clock"></div>
+    <div id="street"></div>
     <div id="hudVeh" hidden><div id="vname"></div><div><span id="spd">0</span> <small>MPH</small></div>
       <div id="gearRow"><div class="rpmbar"><div id="rpm"></div></div><span id="gear">1</span></div></div>
   </div>
   <section id="loading">
     <h1>FREE WORLD</h1>
-    <div class="sub">Phase 2 · Foundation test map</div>
+    <div class="sub">District 1 · Harbor Heights</div>
     <div class="bar"><div id="ldFill"></div></div>
     <div id="ldText">Loading</div>
     <div class="keys"><b>WASD</b> move · <b>Mouse</b> look · <b>Shift</b> sprint · <b>Caps/Alt</b> walk · <b>Space</b> jump / handbrake · <b>RMB</b> aim ·
-      <b>F</b> enter/exit car · <b>C</b> look behind · <b>V</b> first person · <b>Q</b> swap shoulder · <b>Wheel</b> camera distance ·
+      <b>E</b> doors / elevators · <b>K</b> lock (with key) · <b>F</b> enter/exit car · <b>C</b> look behind · <b>V</b> first person · <b>Q</b> swap shoulder · <b>Wheel</b> camera distance ·
       <b>G</b> shove (Shift+G hard) · <b>H</b> test ragdoll · <b>T</b> time +1h · <b>F3</b> perf overlay · <b>Esc</b> settings</div>
   </section>
   <section id="pause" hidden>
@@ -68,7 +70,7 @@
         <select id="optTier"><option value="very-low">Very Low</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
       <label>Mouse sensitivity <input id="optSens" type="range" min="0.3" max="2.5" step="0.1" /></label>
       <table>
-        <tr><td>On foot</td><td>WASD, Shift sprint, Caps/Alt walk, Space jump, RMB aim</td></tr>
+        <tr><td>On foot</td><td>WASD, Shift sprint, Caps/Alt walk, Space jump, RMB aim, E doors/elevators, K lock/unlock (key ring)</td></tr>
         <tr><td>Vehicle</td><td>W throttle, S brake/reverse, Space handbrake, C look behind, E horn</td></tr>
         <tr><td>Camera</td><td>Wheel distance, Q shoulder, V first person</td></tr>
         <tr><td>Test</td><td>G / Shift+G shove, H ragdoll, T time of day, F3 overlay</td></tr>

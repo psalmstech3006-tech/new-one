@@ -13,9 +13,9 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 // Quality tiers (spec §15). Expensive effects scale; geometry and materials do not degrade to primitives.
 export const TIERS = {
   'very-low': { scale: 0.6, dynMin: 0.45, shadows: 0, shadowSize: 1024, ao: false, bloom: false, aa: 'fxaa', far: 250, peds: 6, env: 64 },
-  low:        { scale: 0.75, dynMin: 0.55, shadows: 2, shadowSize: 1024, ao: false, bloom: true, aa: 'fxaa', far: 400, peds: 10, env: 128 },
-  medium:     { scale: 1.0, dynMin: 0.7, shadows: 3, shadowSize: 2048, ao: true, bloom: true, aa: 'smaa', far: 700, peds: 16, env: 256 },
-  high:       { scale: 1.0, dynMin: 0.85, shadows: 4, shadowSize: 2048, ao: true, bloom: true, aa: 'smaa', far: 1200, peds: 24, env: 256 },
+  low:        { scale: 0.75, dynMin: 0.55, shadows: 2, shadowSize: 1024, shadowFar: 110, ao: false, bloom: true, aa: 'fxaa', far: 400, peds: 10, env: 128 },
+  medium:     { scale: 1.0, dynMin: 0.7, shadows: 3, shadowSize: 2048, shadowFar: 130, ao: false, bloom: true, aa: 'smaa', far: 700, peds: 16, env: 256 },
+  high:       { scale: 1.0, dynMin: 0.85, shadows: 4, shadowSize: 2048, shadowFar: 260, ao: true, bloom: true, aa: 'smaa', far: 1200, peds: 24, env: 256 },
 };
 
 export class Renderer {
@@ -58,7 +58,7 @@ export class Renderer {
     s.fog = new THREE.FogExp2('#c9b39a', 0.0022);
     if (this.tier.shadows > 0) {
       this.csm = new CSM({
-        maxFar: Math.min(this.tier.far, 260), cascades: this.tier.shadows, mode: 'practical', parent: s,
+        maxFar: Math.min(this.tier.far, this.tier.shadowFar ?? 180), cascades: this.tier.shadows, mode: 'practical', parent: s,
         shadowMapSize: this.tier.shadowSize, lightDirection: new THREE.Vector3(-1, -1, -1).normalize(),
         camera: this.camera, lightIntensity: 3.2, shadowBias: -0.0002,
       });

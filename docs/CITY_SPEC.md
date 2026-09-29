@@ -67,12 +67,37 @@ Interiors are built lazily when the player comes within 45 m and freed beyond 90
 - **LOD:** full detail within 170 m; simplified massing beyond.
 - **Collision:** wall segments around door openings; floors; stairs as ramps; large furniture only.
 
-## 8. Phase 1 completion checklist
+## 8. Implementation (src/fw/city/)
 
-- [ ] District layout with streets, sidewalks, crossings, lights, signals and street signs
-- [ ] At least 40 buildings across all five groups, visibly varied
-- [ ] Parking lots/structure, gas station, park with pitches, school grounds, rail + bus infrastructure
-- [ ] At least 12 enterable buildings with real interiors and working doors
-- [ ] Interior streaming + LOD + perf overlay checks
-- [ ] Existing cars parked and drivable in the district; existing props used for street dressing
-- [ ] Documented, tested, committed
+| Module | Role |
+|---|---|
+| `materials.js` | shared vertex-tinted PBR materials (+ night-lit window glass, clear shop glass) and the `SignAtlas` |
+| `geom.js` | `GeoBuilder` (per-material merge, collider list), deterministic `rng` |
+| `archkit.js` | facade engine (per-floor bands with real openings), window/storefront/door/roller inserts, cornices, parapets, balconies, fire escapes, awnings, signs, stairwell cut-outs |
+| `families.js` | 30+ building families (see §3) returning geometry, colliders, door records and metadata |
+| `interiors.js` | furniture kit + 14 hero layouts: house (2 floors, stairs), apartment lobby + stair + Apt 201, convenience/gas, shop units (cafe, clothing, pharmacy, electronics, general), bank (tellers, ATMs, vault), police (reception, offices, interview, 4 cells), clinic (reception, 5 treatment rooms), school (corridor, 5 classrooms, staff room), office low-rise (lobby + elevator + open-plan floor 2), office tower (lobby, security gates, elevator to floor 4), train station hall, mall (concourse, 8 shop units, food court, fountain), gym, workshop |
+| `district.js` | Harbor Heights layout: road grid + markings + crossings, raised blocks, 48 buildings, park, school field, parking lots, rail corridor + parked train, instanced trees and breakable lamps, street name blades, traffic lights and generated props; merges exteriors into chunk meshes |
+| `doors.js` | hinged leaves (single/double; wood, glass, bars) with kinematic colliders, lock/unlock via key ring, auto-close, instanced rendering |
+| `runtime.js` | interior streaming (45 m build / 90 m free, 1 per frame), inside-volume detection (camera `interior` state), pooled interior point lights (1–4 by tier), elevator rides, interaction prompts |
+
+`?map=test` still opens the old proving ground.
+
+### Measured (headless, software GPU — counts are what matter)
+- District build ≈ 1 s. 48 buildings, 27 enterable, 95 exterior doors, 134 trees, 99 lamps.
+- Very Low: ~90–230 draw calls, ~0.3–0.4 M triangles. Low: ~200–560 calls, ~0.5–1.3 M. Medium: ~360–600 calls, ~1.0–1.3 M (3 shadow cascades).
+- Interior build 5–80 ms each (streamed one per frame).
+
+## 9. Phase 1 completion checklist
+
+- [x] District layout with streets, sidewalks, crossings, lights, signals and street signs
+- [x] At least 40 buildings across all five groups, visibly varied (48)
+- [x] Parking lots/structure, gas station, park with pitches, school grounds, rail + bus infrastructure
+- [x] At least 12 enterable buildings with real interiors and working doors (27 streamed interiors, 14 layout types)
+- [x] Interior streaming + LOD + perf overlay checks
+- [x] Existing cars parked and drivable in the district; existing props used for street dressing
+- [x] Documented, tested, committed
+
+### Known gaps (tracked)
+- Generated props are individual meshes (~70 draw calls); instancing them is the next perf step.
+- Upper floors are enterable only where there is a stair/elevator (house, apartment, offices).
+- Shops/ATMs/tellers show prompts; buying and banking arrive with the economy phase.

@@ -104,13 +104,112 @@ function worldBox(w, h, d, tile) {
   return g;
 }
 
-export class TestMap {
+// Shared dynamic-prop world (lamps, props, generated model props). TestMap and the city
+// District both build on it.
+export class PropWorld {
   constructor(game, tex) {
     this.game = game;
-    const M = (this.M = makeMaterials(tex));
-    const scene = game.scene, phys = game.physics, w = phys.world;
+    this.M = makeMaterials(tex);
     this.props = [];
     this.lamps = [];
+  }
+  addLamp(pos) {
+    const w = this.game.physics.world, M = this.M;
+    const g = new THREE.Group();
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 6, 10), M.metal); pole.position.y = 3; pole.castShadow = true;
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.6, 8), M.metal); arm.rotation.z = Math.PI / 2; arm.position.set(-0.75, 5.9, 0);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.14, 0.3), M.metal); head.position.set(-1.5, 5.85, 0);
+    const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.24), M.lamp); bulb.position.set(-1.5, 5.77, 0);
+    g.add(pole, arm, head, bulb);
+    this.game.scene.add(g);
+    const body = w.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(pos.x, pos.y + 3, pos.z));
+    const col = this.game.physics.own(w.createCollider(R.ColliderDesc.cylinder(3, 0.1).setDensity(300)
+      .setCollisionGroups(groups(L.PROP, ALL)).setActiveEvents(R.ActiveEvents.COLLISION_EVENTS), body), { kind: 'lamp' });
+    const prop = { mesh: g, body, offsetY: -3, kind: 'lamp', collider: col, light: bulb };
+    this.game.physics.handles.get(col.handle).prop = prop;
+    this.props.push(prop);
+    this.lamps.push(prop);
+  }
+
+  addProp(kind, pos) {
+    const w = this.game.physics.world, M = this.M;
+    let mesh, desc, oy = 0;
+    if (kind === 'cone') {
+      mesh = new THREE.Group();
+      const c = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.7, 16), M.orange); c.position.y = 0.37;
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.04, 0.42), M.orange); b.position.y = 0.02;
+      const s = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.125, 0.1, 16), M.white); s.position.y = 0.42;
+      mesh.add(c, b, s); desc = R.ColliderDesc.cone(0.36, 0.2).setTranslation(0, 0.36, 0).setMass(3);
+    } else if (kind === 'bin') {
+      mesh = new THREE.Group();
+      const b = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.95, 0.7), M.binG); b.position.y = 0.48;
+      const l = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.06, 0.76), M.binG); l.position.y = 0.98;
+      mesh.add(b, l); desc = R.ColliderDesc.cuboid(0.3, 0.5, 0.35).setTranslation(0, 0.5, 0).setMass(18);
+    } else if (kind === 'crate') {
+      mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), M.wood); desc = R.ColliderDesc.cuboid(0.5, 0.5, 0.5).setMass(28);
+    } else {
+      mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.9, 20), M.barrel); desc = R.ColliderDesc.cylinder(0.45, 0.3).setMass(40);
+    }
+    mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    if (!mesh.isGroup) { const g = new THREE.Group(); g.add(mesh); mesh = g; }
+    this.game.scene.add(mesh);
+    const body = w.createRigidBody(R.RigidBodyDesc.dynamic().setTranslation(pos.x, pos.y, pos.z).setCanSleep(true).setAngularDamping(0.3));
+    w.createCollider(desc.setFriction(0.7).setRestitution(0.15).setCollisionGroups(groups(L.PROP, ALL)), body);
+    this.props.push({ mesh, body, offsetY: oy, kind });
+  }
+
+  // Generated prop models (tools/process-prop.mjs): box collider from the model's size.
+  // static props stay put (hydrant, traffic light, barrier); dynamic ones can be knocked around.
+  addModelProp(model, pos, rotY = 0, { mass = 0, fit = 0.9 } = {}) {
+    if (!model) return null;
+    const w = this.game.physics.world;
+    const mesh = model.scene.clone();
+    mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    const [sx, sy, sz] = model.size;
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotY);
+    const desc = mass > 0 ? R.RigidBodyDesc.dynamic().setCanSleep(true).setAngularDamping(0.4) : R.RigidBodyDesc.fixed();
+    const body = w.createRigidBody(desc.setTranslation(pos.x, pos.y + sy / 2, pos.z).setRotation(q));
+    const col = R.ColliderDesc.cuboid((sx * fit) / 2, sy / 2, (sz * fit) / 2).setFriction(0.7).setRestitution(0.1)
+      .setCollisionGroups(groups(mass > 0 ? L.PROP : L.WORLD, ALL));
+    if (mass > 0) col.setMass(mass);
+    w.createCollider(col, body);
+    const g = new THREE.Group(); g.add(mesh); this.game.scene.add(g);
+    const prop = { mesh: g, body, offsetY: -sy / 2, kind: 'model', dirty: true };
+    this.props.push(prop);
+    // static props never move: place once
+    const t = body.translation(); g.position.set(t.x, t.y - sy / 2, t.z); g.quaternion.copy(q);
+    if (mass === 0) prop.static = true;
+    return prop;
+  }
+
+  update(night) {
+    for (const p of this.props) {
+      if (p.static || (p.body.isSleeping() && !p.dirty)) continue;
+      const t = p.body.translation(), r = p.body.rotation();
+      p.mesh.quaternion.set(r.x, r.y, r.z, r.w);
+      p.mesh.position.set(t.x, t.y, t.z).add(new THREE.Vector3(0, p.offsetY, 0).applyQuaternion(p.mesh.quaternion));
+      p.dirty = false;
+    }
+    this.M.lamp.emissiveIntensity = night * 6;
+    this.M.facade.emissiveIntensity = night * 1.4;
+  }
+
+  // Knock a lamp post loose when a vehicle hits it
+  breakLamp(prop, vel) {
+    if (prop.broken) return;
+    prop.broken = true;
+    prop.body.setBodyType(R.RigidBodyType.Dynamic, true);
+    prop.body.setLinvel({ x: vel.x * 0.4, y: 1, z: vel.z * 0.4 }, true);
+    prop.body.setAngvel({ x: vel.z * 0.3, y: 0, z: -vel.x * 0.3 }, true);
+    prop.dirty = true;
+  }
+}
+
+export class TestMap extends PropWorld {
+  constructor(game, tex) {
+    super(game, tex);
+    const M = this.M;
+    const scene = game.scene, phys = game.physics, w = phys.world;
     this.spawns = { player: new THREE.Vector3(6, 0, -8), cars: [], peds: [] };
 
     // ground: asphalt apron + grass
@@ -183,75 +282,6 @@ export class TestMap {
     for (let z = -45; z <= 45; z += 15) this.addLamp(new THREE.Vector3(23.6, 0.15, z));
   }
 
-  addLamp(pos) {
-    const w = this.game.physics.world, M = this.M;
-    const g = new THREE.Group();
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 6, 10), M.metal); pole.position.y = 3; pole.castShadow = true;
-    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.6, 8), M.metal); arm.rotation.z = Math.PI / 2; arm.position.set(-0.75, 5.9, 0);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.14, 0.3), M.metal); head.position.set(-1.5, 5.85, 0);
-    const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.24), M.lamp); bulb.position.set(-1.5, 5.77, 0);
-    g.add(pole, arm, head, bulb);
-    this.game.scene.add(g);
-    const body = w.createRigidBody(R.RigidBodyDesc.kinematicPositionBased().setTranslation(pos.x, pos.y + 3, pos.z));
-    const col = this.game.physics.own(w.createCollider(R.ColliderDesc.cylinder(3, 0.1).setDensity(300)
-      .setCollisionGroups(groups(L.PROP, ALL)).setActiveEvents(R.ActiveEvents.COLLISION_EVENTS), body), { kind: 'lamp' });
-    const prop = { mesh: g, body, offsetY: -3, kind: 'lamp', collider: col, light: bulb };
-    this.game.physics.handles.get(col.handle).prop = prop;
-    this.props.push(prop);
-    this.lamps.push(prop);
-  }
-
-  addProp(kind, pos) {
-    const w = this.game.physics.world, M = this.M;
-    let mesh, desc, oy = 0;
-    if (kind === 'cone') {
-      mesh = new THREE.Group();
-      const c = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.7, 16), M.orange); c.position.y = 0.37;
-      const b = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.04, 0.42), M.orange); b.position.y = 0.02;
-      const s = new THREE.Mesh(new THREE.CylinderGeometry(0.105, 0.125, 0.1, 16), M.white); s.position.y = 0.42;
-      mesh.add(c, b, s); desc = R.ColliderDesc.cone(0.36, 0.2).setTranslation(0, 0.36, 0).setMass(3);
-    } else if (kind === 'bin') {
-      mesh = new THREE.Group();
-      const b = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.95, 0.7), M.binG); b.position.y = 0.48;
-      const l = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.06, 0.76), M.binG); l.position.y = 0.98;
-      mesh.add(b, l); desc = R.ColliderDesc.cuboid(0.3, 0.5, 0.35).setTranslation(0, 0.5, 0).setMass(18);
-    } else if (kind === 'crate') {
-      mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), M.wood); desc = R.ColliderDesc.cuboid(0.5, 0.5, 0.5).setMass(28);
-    } else {
-      mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.9, 20), M.barrel); desc = R.ColliderDesc.cylinder(0.45, 0.3).setMass(40);
-    }
-    mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    if (!mesh.isGroup) { const g = new THREE.Group(); g.add(mesh); mesh = g; }
-    this.game.scene.add(mesh);
-    const body = w.createRigidBody(R.RigidBodyDesc.dynamic().setTranslation(pos.x, pos.y, pos.z).setCanSleep(true).setAngularDamping(0.3));
-    w.createCollider(desc.setFriction(0.7).setRestitution(0.15).setCollisionGroups(groups(L.PROP, ALL)), body);
-    this.props.push({ mesh, body, offsetY: oy, kind });
-  }
-
-  // Generated prop models (tools/process-prop.mjs): box collider from the model's size.
-  // static props stay put (hydrant, traffic light, barrier); dynamic ones can be knocked around.
-  addModelProp(model, pos, rotY = 0, { mass = 0, fit = 0.9 } = {}) {
-    if (!model) return null;
-    const w = this.game.physics.world;
-    const mesh = model.scene.clone();
-    mesh.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-    const [sx, sy, sz] = model.size;
-    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotY);
-    const desc = mass > 0 ? R.RigidBodyDesc.dynamic().setCanSleep(true).setAngularDamping(0.4) : R.RigidBodyDesc.fixed();
-    const body = w.createRigidBody(desc.setTranslation(pos.x, pos.y + sy / 2, pos.z).setRotation(q));
-    const col = R.ColliderDesc.cuboid((sx * fit) / 2, sy / 2, (sz * fit) / 2).setFriction(0.7).setRestitution(0.1)
-      .setCollisionGroups(groups(mass > 0 ? L.PROP : L.WORLD, ALL));
-    if (mass > 0) col.setMass(mass);
-    w.createCollider(col, body);
-    const g = new THREE.Group(); g.add(mesh); this.game.scene.add(g);
-    const prop = { mesh: g, body, offsetY: -sy / 2, kind: 'model', dirty: true };
-    this.props.push(prop);
-    // static props never move: place once
-    const t = body.translation(); g.position.set(t.x, t.y - sy / 2, t.z); g.quaternion.copy(q);
-    if (mass === 0) prop.static = true;
-    return prop;
-  }
-
   // Dress the street block with generated props (spec §8 density targets).
   placeModelProps(models) {
     if (!models) return;
@@ -266,25 +296,4 @@ export class TestMap {
     this.addModelProp(models.trafficlight, P(23.4, 0.15, 48.5), 0);
   }
 
-  update(night) {
-    for (const p of this.props) {
-      if (p.static || (p.body.isSleeping() && !p.dirty)) continue;
-      const t = p.body.translation(), r = p.body.rotation();
-      p.mesh.quaternion.set(r.x, r.y, r.z, r.w);
-      p.mesh.position.set(t.x, t.y, t.z).add(new THREE.Vector3(0, p.offsetY, 0).applyQuaternion(p.mesh.quaternion));
-      p.dirty = false;
-    }
-    this.M.lamp.emissiveIntensity = night * 6;
-    this.M.facade.emissiveIntensity = night * 1.4;
-  }
-
-  // Knock a lamp post loose when a vehicle hits it
-  breakLamp(prop, vel) {
-    if (prop.broken) return;
-    prop.broken = true;
-    prop.body.setBodyType(R.RigidBodyType.Dynamic, true);
-    prop.body.setLinvel({ x: vel.x * 0.4, y: 1, z: vel.z * 0.4 }, true);
-    prop.body.setAngvel({ x: vel.z * 0.3, y: 0, z: -vel.x * 0.3 }, true);
-    prop.dirty = true;
-  }
 }

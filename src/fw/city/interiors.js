@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GeoBuilder, rng } from './geom.js';
 import { T } from './archkit.js';
+import { SignAtlas } from './materials.js';
 
 // ============================================================================
 // Interiors: furniture kit + room layouts for enterable buildings.
@@ -707,7 +708,9 @@ L.workshop = (ctx) => {
 // ---------------------------------------------------------------- entry point
 export const INTERIOR_KINDS = Object.keys(L);
 
-export function buildInterior(building, M, atlas) {
+export function buildInterior(building, M, atlas = null) {
+  const ownAtlas = !atlas && typeof document !== 'undefined';
+  if (ownAtlas) atlas = new SignAtlas({ cols: 2, rows: 8, slotW: 512, slotH: 128 });
   const meta = building.meta, kind = meta?.interior;
   if (!kind || !L[kind]) return null;
   const [w, d] = building.footprint;
@@ -723,5 +726,5 @@ export function buildInterior(building, M, atlas) {
   L[kind](ctx);
   const group = B.build(`${meta.name} interior`);
   group.traverse((o) => { if (o.isMesh) o.castShadow = false; });
-  return { group, colliders: B.colliders, doors: ctx.doors, lights: ctx.lights, volumes: ctx.volumes, interactables: ctx.interactables, tris: B.tris };
+  return { group, colliders: B.colliders, doors: ctx.doors, lights: ctx.lights, volumes: ctx.volumes, interactables: ctx.interactables, tris: B.tris, atlas: ownAtlas ? atlas : null };
 }

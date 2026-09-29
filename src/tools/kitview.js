@@ -14,7 +14,7 @@ s.environment = pm.fromScene(es).texture; s.environmentIntensity = 0.45;
 s.add(new THREE.HemisphereLight('#dfe8ff', '#6b5a48', 0.35));
 const sun = new THREE.DirectionalLight('#fff0dc', 2.2); sun.position.set(40, 60, 30); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
 Object.assign(sun.shadow.camera, { left: -80, right: 80, top: 80, bottom: -80, far: 300 }); s.add(sun);
-const M = cityMaterials(), atlas = new SignAtlas();
+const M = cityMaterials(), atlas = new SignAtlas({ cols: 8, rows: 32, slotW: 256, slotH: 64 });
 const g = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: '#777' })); g.rotation.x = -Math.PI / 2; g.receiveShadow = true; s.add(g);
 const which = new URLSearchParams(location.search).get('set') || 'core';
 const list = [];
@@ -35,7 +35,7 @@ if (which === 'core') {
   const q = new URLSearchParams(location.search), cut = q.get('cut');
   for (const { res, bb } of built) {
     add(res, x - bb.min.x, 0);
-    const inn = q.get('interior') || cut ? buildInterior(res, M, atlas) : null;
+    const inn = q.get('interior') || cut ? buildInterior(res, M) : null;
     if (inn) { inn.group.position.copy(res.group.position); s.add(inn.group); res.inner = inn; }
     if (cut) res.group.visible = false;
     x += bb.max.x - bb.min.x + 6;

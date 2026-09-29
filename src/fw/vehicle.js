@@ -166,6 +166,8 @@ function buildWheel(r, w) {
 }
 
 // ---------------------------------------------------------------- vehicle
+const SHADOW_PROXY = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+
 export class Vehicle {
   constructor(game, type, pos, heading = 0, color = '#8e1b1b') {
     this.game = game;
@@ -217,9 +219,13 @@ export class Vehicle {
       // LOD body: full-detail near, simplified further away (spec §15/§16)
       const lod = new THREE.LOD();
       const near = model.body[0].clone();
-      near.traverse((o) => { if (o.isMesh) { o.geometry = o.geometry.clone(); o.castShadow = o.receiveShadow = true; } }); // own copy so dents stay per-car
+      near.traverse((o) => { if (o.isMesh) { o.geometry = o.geometry.clone(); o.castShadow = false; o.receiveShadow = true; } }); // own copy so dents stay per-car
       lod.addLevel(near, 0);
-      model.body.slice(1).forEach((b, i) => { const c = b.clone(); c.traverse((o) => { if (o.isMesh) o.castShadow = true; }); lod.addLevel(c, [22, 60][i]); });
+      model.body.slice(1).forEach((b, i) => { const c = b.clone(); c.traverse((o) => { if (o.isMesh) o.castShadow = false; }); lod.addLevel(c, [22, 60][i]); });
+      // shadow proxy: the simplified body casts the shadow at every distance (invisible in the colour pass)
+      const proxy = model.body[1].clone();
+      proxy.traverse((o) => { if (o.isMesh) { o.material = SHADOW_PROXY; o.castShadow = true; o.receiveShadow = false; } });
+      lod.add(proxy); this.shadowProxy = proxy;
       // model ground sits at y=0; place it so its axles line up with the suspension at rest
       const restLen = H.susRest - 9.81 / (4 * H.susStiff);
       lod.position.y = -0.05 - restLen - H.wheelR;

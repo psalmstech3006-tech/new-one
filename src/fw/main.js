@@ -3,6 +3,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { initPhysics, Physics, R } from './physics.js';
 import { Renderer, TIERS } from './render.js';
 import { TestMap } from './testmap.js';
+import { District } from './city/district.js';
+import { CityRuntime } from './city/runtime.js';
 import { Character } from './character.js';
 import { Vehicle } from './vehicle.js';
 import { CameraRig } from './camera.js';
@@ -93,26 +95,35 @@ async function main() {
   const props = await loadProps();
   status('Loading materials', 0.15);
   const tex = await loadTextures(() => {});
-  status('Building proving ground', 0.35);
-  const map = new TestMap(game, tex);
-  map.placeModelProps(props);
+  const useTest = new URLSearchParams(location.search).get('map') === 'test';
+  status(useTest ? 'Building proving ground' : 'Building Harbor Heights', 0.35);
+  await new Promise((r) => setTimeout(r, 30));
+  let map;
+  if (useTest) { map = new TestMap(game, tex); map.placeModelProps(props); }
+  else map = new District(game, tex, { props });
+  const city = useTest ? null : new CityRuntime(game, map, tierName);
   status('Loading character', 0.5);
   const charAsset = await loadCharacter();
   status('Spawning', 0.8);
 
-  const player = new Character(game, charAsset, map.spawns.player, { player: true, facing: Math.PI });
+  const player = new Character(game, charAsset, map.spawns.player, { player: true, facing: map.spawns.playerFacing ?? Math.PI });
+  // key ring: your home and your apartment (property ownership grants keys in the economy phase)
+  player.keys = new Set(['key_Home', 'key_apt_201']);
   // generated sedan when available (falls back to the procedural sedan)
   // procedural placeholders are swapped for generated models when those loaded
   const GEN = { sedan: ['meridian', 'fw_veh_sedan_meridian'], coupe: ['vento', 'fw_veh_coupe_vento'], suv: ['ridgeback', 'fw_veh_suv_ridgeback'], patrol: ['patrol', 'fw_veh_sedan_meridian'] };
   const pick = (t) => (GEN[t] && game.models[GEN[t][1]] ? GEN[t][0] : t === 'patrol' ? 'sedan' : t);
   const vehicles = map.spawns.cars.map(([t, p, h, c]) => new Vehicle(game, pick(t), p, h, c || '#1f3f66'));
   const npcLooks = LOOKS.slice(1).map((l) => buildHumanoid(l));
-  const npcs = map.spawns.peds.slice(0, renderer.tier.peds).map((p, i) => {
+  const npcs = map.spawns.peds.slice(0, renderer.tier.peds).map((sp, i) => {
+    const p = sp.pos || sp;
     const n = new Character(game, npcLooks[i % npcLooks.length], p, { facing: i % 2 ? 0 : Math.PI });
-    n.ai = { dir: i % 2 ? 1 : -1, wait: Math.random() * 3, gait: Math.random() < 0.8 ? 'walk' : 'run' };
+    n.ai = { dir: sp.dir ?? (i % 2 ? 1 : -1), wait: Math.random() * 3, gait: Math.random() < 0.85 ? 'walk' : 'run' };
+    if (sp.ring != null) { n.ai.ring = map.pedRings[sp.ring]; n.ai.next = sp.dir > 0 ? (sp.seg + 1) % 4 : sp.seg; }
     return n;
   });
   const cam = new CameraRig(renderer.camera, physics);
+  cam.yaw = player.facing;
   const input = new Input($('view'));
   input.sens = Number(localStorage.getItem('fw-sens') || 1);
   const overlay = new DevOverlay();
@@ -120,7 +131,7 @@ async function main() {
   renderer.setTime(17.25);
   renderer.prepareMaterials();
 
-  let timeOfDay = 17.25, firstPerson = false, walkToggle = false;
+  let timeOfDay = 17.25, firstPerson = false, walkToggle = false, cullT = 0;
   let moveCmd = { dir: new THREE.Vector3(), gait: 'run', jump: false, aimYaw: null };
   const stats = { cpuMs: 0, physMs: 0, physSteps: 0, renderMs: 0, aiMs: 0, animMs: 0, bodies: 0, colliders: 0, npcs: npcs.length, vehicles: vehicles.length, texMB: null, renderer };
 
@@ -132,11 +143,19 @@ async function main() {
     for (const n of npcs) {
       if (n.state !== 'loco') continue;
       const ai = n.ai;
-      // simple sidewalk patrol with pauses; step aside from fast cars
+      // sidewalk loops around the blocks (city) or a straight patrol (proving ground),
+      // with pauses; step aside from fast cars
       ai.wait -= dt;
-      let dir = new THREE.Vector3(0, 0, ai.wait > 0 ? 0 : ai.dir);
       const p = n.position;
-      if (p.z > 46) ai.dir = -1; if (p.z < -46) ai.dir = 1;
+      let dir;
+      if (ai.ring) {
+        const t = ai.ring[ai.next], to = new THREE.Vector3(t[0] - p.x, 0, t[1] - p.z);
+        if (to.length() < 1.0) ai.next = (ai.next + ai.dir + 4) % 4;
+        dir = ai.wait > 0 ? new THREE.Vector3() : to.normalize();
+      } else {
+        dir = new THREE.Vector3(0, 0, ai.wait > 0 ? 0 : ai.dir);
+        if (p.z > 46) ai.dir = -1; if (p.z < -46) ai.dir = 1;
+      }
       if (ai.wait < -8 - Math.random() * 10) ai.wait = 1 + Math.random() * 3;
       for (const v of vehicles) {
         const rel = p.clone().sub(v.position); const vv = v.velocity;
@@ -248,7 +267,7 @@ async function main() {
   status('Ready — click to play', 1);
   $('loading').classList.add('ready');
   $('loading').onclick = () => { $('loading').hidden = true; started = true; input.enabled = true; audio.init(); $('view').requestPointerLock?.(); };
-  window.__fw = { player, vehicles, npcs, cam, physics, renderer, map, input, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
+  window.__fw = { player, vehicles, npcs, cam, physics, renderer, map, city, input, get current() { return current; }, get paused() { return paused; }, get started() { return started; }, get moveCmd() { return moveCmd; }, enter, exit, charUrl: charAsset.url,
     advance(sec) { for (let t = 0; t < sec; t += 1 / 60) { tick(1 / 60, false); input.pressed.clear(); } } };
 
   // ------------------------------------------------------------ frame loop
@@ -295,9 +314,10 @@ async function main() {
         const gait = input.down('ShiftLeft', 'ShiftRight') && !aiming ? 'sprint' : walkToggle ? 'walk' : 'run';
         moveCmd = { dir, gait, jump: input.hit('Space'), aimYaw: aiming ? cam.yaw : null };
         const near = vehicles.find((v) => !v.driver && v.doorWorld().distanceTo(player.position) < 3.2);
-        hint(near ? `Press F to enter the ${near.H.name}` : '');
+        const cityHint = city ? city.interact(player, { use: input.hit('KeyE'), lock: input.hit('KeyK') }) : '';
+        hint(cityHint || (near ? `Press F to enter the ${near.H.name}` : ''));
       }
-      cam.setState(firstPerson ? 'first' : current ? 'vehicle' : input.rmb ? 'aim' : moveCmd.gait === 'sprint' && player.speed > 5 ? 'sprint' : 'explore');
+      cam.setState(firstPerson ? 'first' : current ? 'vehicle' : input.rmb ? 'aim' : city?.inside ? 'interior' : moveCmd.gait === 'sprint' && player.speed > 5 ? 'sprint' : 'explore');
     }
     input.end();
 
@@ -310,11 +330,22 @@ async function main() {
     for (const n of npcs) n.sync(dt);
     stats.animMs = performance.now() - a0;
     map.update(renderer.night || 0);
+    if (city) { city.update(dt, current ? current.position : player.position); stats.city = city.stats; }
+    // distance budget: far characters/props are hidden, only nearby ones cast shadows
+    cullT -= dt;
+    if (cullT <= 0 && render) {
+      cullT = 0.25;
+      const cp = renderer.camera.position, shadowR = renderer.tier.shadows ? (renderer.tierName === 'high' ? 45 : 30) : 0;
+      for (const c of npcs) { const d = c.root.position.distanceTo(cp); c.model.visible = d < renderer.tier.far * 0.35; if (c.shadowOn !== d < shadowR) { c.shadowOn = d < shadowR; c.model.traverse((o) => { if (o.isMesh) o.castShadow = c.shadowOn; }); } }
+      for (const pr of map.props) { if (!pr.mesh) continue; const d = pr.mesh.position.distanceTo(cp); pr.mesh.visible = d < renderer.tier.far * 0.4; const sh = d < shadowR + 10; if (pr.shadowOn !== sh) { pr.shadowOn = sh; pr.mesh.traverse((o) => { if (o.isMesh) o.castShadow = sh; }); } }
+    }
     timeOfDay = (timeOfDay + dt / 120) % 24; // 1 game hour = 2 real minutes
     renderer.setTime(timeOfDay);
 
     const headPos = current ? current.seatWorld().add(new THREE.Vector3(0, 0.75, 0)) : player.position.add(new THREE.Vector3(0, 1.66, 0)).addScaledVector(cam.flatForward, 0.15);
-    const camDist = cam.update(dt, { pos: player.position, vehicle: current, exclude: current ? current.collider : player.collider, headPos });
+    let camDist = 5;
+    if (window.__fwCamOverride) { const o = window.__fwCamOverride; renderer.camera.position.set(o[0], o[1], o[2]); renderer.camera.lookAt(o[3], o[4], o[5]); }
+    else camDist = cam.update(dt, { pos: player.position, vehicle: current, exclude: current ? current.collider : player.collider, headPos });
     player.root.visible = player.visible && !(firstPerson && !current) && camDist > 0.45;
 
     // HUD
@@ -326,6 +357,7 @@ async function main() {
       $('vname').textContent = current.H.name;
       audio.update({ rpm: current.rpm / current.H.redline, throttle: current.input.throttle }, 0);
     } else { $('hudVeh').hidden = true; audio.update(null, 0); }
+    if (city && $('street')) { const where = city.inside ? city.inside.b.meta.name : map.streetAt(current ? current.position : player.position); if ($('street').textContent !== where) $('street').textContent = where; }
     $('clock').textContent = `${String(Math.floor(timeOfDay)).padStart(2, '0')}:${String(Math.floor((timeOfDay % 1) * 60)).padStart(2, '0')}`;
 
     stats.cpuMs = performance.now() - c0;

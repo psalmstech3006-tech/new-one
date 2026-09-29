@@ -32,12 +32,10 @@ function sideBox(B, S, mat, u, y, du, dy, dn, off, color, collide = false) {
 function windowInsert(B, S, o, st) {
   const u = (o.u0 + o.u1) / 2, w = o.u1 - o.u0, y0 = o.y0, h = o.y1 - o.y0, yc = y0 + h / 2;
   const glassOff = T / 2 - 0.16;
-  sideBox(B, S, 'glass', u, yc, w, h, 0.03, glassOff, st.glass || '#8aa0b4');
-  const fr = st.frame || '#e8e4dc', ft = 0.07;
-  sideBox(B, S, 'frame', u, y0 + ft / 2, w, ft, 0.1, glassOff + 0.02, fr);
-  sideBox(B, S, 'frame', u, y0 + h - ft / 2, w, ft, 0.1, glassOff + 0.02, fr);
-  sideBox(B, S, 'frame', o.u0 + ft / 2, yc, ft, h, 0.1, glassOff + 0.02, fr);
-  sideBox(B, S, 'frame', o.u1 - ft / 2, yc, ft, h, 0.1, glassOff + 0.02, fr);
+  sideBox(B, S, Math.random() < (st.litShare ?? 0.35) ? 'glassLit' : 'glass', u, yc, w - 0.14, h - 0.14, 0.03, glassOff, st.glass || '#8aa0b4');
+  // frame = one plate behind the glass, visible as a border around the pane (2 boxes instead of 5)
+  const fr = st.frame || '#e8e4dc';
+  sideBox(B, S, 'frame', u, yc, w, h, 0.05, glassOff - 0.035, fr);
   if (w > 1.25) sideBox(B, S, 'frame', u, yc, 0.05, h, 0.08, glassOff + 0.02, fr);           // mullion
   if (st.transom) sideBox(B, S, 'frame', u, y0 + h * 0.72, w, 0.05, 0.08, glassOff + 0.02, fr); // transom
   // reveal/sill/lintel
@@ -178,22 +176,22 @@ function beltCourses(B, w, d, levels, color) {
     B.box('trim', -w / 2 - 0.04, y, 0, 0.14, 0.16, d + 0.12, color);
   }
 }
+// Projecting cornice as a ring around the roof edge (never a slab over the roof).
 function cornice(B, w, d, H, color, depth = 0.45) {
-  B.box('trim', 0, H + 0.1, 0, w + depth * 2, 0.3, d + depth * 2, color);
-  B.box('trim', 0, H - 0.12, 0, w + depth, 0.16, d + depth, color);
+  const ring = (y, h, o, t) => {
+    B.box('trim', 0, y, d / 2 + o / 2 - t / 2, w + o * 2, h, t + o, color); B.box('trim', 0, y, -d / 2 - o / 2 + t / 2, w + o * 2, h, t + o, color);
+    B.box('trim', w / 2 + o / 2 - t / 2, y, 0, t + o, h, d, color); B.box('trim', -w / 2 - o / 2 + t / 2, y, 0, t + o, h, d, color);
+  };
+  ring(H + 0.1, 0.3, depth, 0.5); ring(H - 0.12, 0.16, depth / 2, 0.3);
 }
 function plinth(B, w, d, color, h = 0.55) { B.box('stone', 0, h / 2, 0, w + 0.1, h, d + 0.1, color); }
 function balcony(B, S, u, y, w, st) {
-  const dep = 1.3;
-  sideBox(B, S, 'concrete', u, y - 0.1, w, 0.2, dep, T / 2 + dep / 2, st.balcony || '#d9d6cf');
-  const rail = st.railColor || '#2f3337';
-  sideBox(B, S, 'metal', u, y + 1.0, w, 0.05, 0.05, T / 2 + dep - 0.03, rail);
-  sideBox(B, S, 'metal', u, y + 0.12, w, 0.04, 0.04, T / 2 + dep - 0.03, rail);
-  for (let k = -w / 2; k <= w / 2 + 0.01; k += 0.3) sideBox(B, S, 'metal', u + k, y + 0.5, 0.025, 1.0, 0.025, T / 2 + dep - 0.03, rail);
-  for (const s of [-1, 1]) {
-    sideBox(B, S, 'metal', u + s * w / 2, y + 1.0, 0.05, 0.05, dep, T / 2 + dep / 2, rail);
-    for (let k = 0.3; k < dep; k += 0.3) sideBox(B, S, 'metal', u + s * w / 2, y + 0.5, 0.025, 1.0, 0.025, T / 2 + k, rail);
-  }
+  const dep = 1.3, rail = st.railColor || '#2f3337', par = st.balcony || '#d9d6cf';
+  sideBox(B, S, 'concrete', u, y - 0.1, w, 0.2, dep, T / 2 + dep / 2, par);
+  // parapet panels (front + sides) with a metal top rail
+  sideBox(B, S, st.balconyGlass ? 'glass' : 'concrete', u, y + 0.5, w, 0.8, 0.06, T / 2 + dep - 0.03, st.balconyGlass ? '#8aa0b4' : par);
+  for (const sgn of [-1, 1]) sideBox(B, S, 'concrete', u + sgn * (w / 2 - 0.03), y + 0.5, 0.06, 0.8, dep, T / 2 + dep / 2, par);
+  sideBox(B, S, 'metal', u, y + 0.95, w + 0.04, 0.05, 0.08, T / 2 + dep - 0.03, rail);
 }
 function fireEscape(B, S, u, floorsY, w = 3.2) {
   const c = '#2a2c2f', dep = 1.2;
