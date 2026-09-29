@@ -2,7 +2,14 @@
   "mcpServers": {
     "tripo": {
       "command": "tripo",
-      "args": ["mcp", "--no-open"]
+      "args": [
+        "mcp",
+        "--no-open"
+      ]
+    },
+    "hyper3d": {
+      "type": "http",
+      "url": "https://api.hyper3d.com/api/mcp"
     }
   }
 }
